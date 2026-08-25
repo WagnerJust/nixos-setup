@@ -29,6 +29,7 @@
 
   # Remote access for this desktop. openFirewall (default true) opens 22.
   services.openssh.enable = true;
+  services.openssh.settings.PermitRootLogin = "no"; # root: TTY + su only, no SSH
   users.users.justin.openssh.authorizedKeys.keys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEGXrWva+3LnsW+j+SKHtLI575eHRFCvG0nVCDRqQmWu box-access"
   ];
