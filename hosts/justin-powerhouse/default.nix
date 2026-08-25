@@ -16,11 +16,12 @@
 
   networking.hostName = "justin-powerhouse";
 
-  # Swap is its own LUKS partition (nvme0n1p3). nixos-generate-config lists it
-  # in swapDevices but emits no unlock for it, so without this it never
-  # decrypts and stays at 0 B. No resumeDevice: desktop, not hibernating.
-  boot.initrd.luks.devices."luks-14212e0a-ef39-40c7-97c0-b23dabff3db9".device =
-    "/dev/disk/by-uuid/14212e0a-ef39-40c7-97c0-b23dabff3db9";
+  # Swap (nvme0n1p3) uses a fresh random key each boot — no passphrase prompt at
+  # boot, and no emergency-mode risk if an unlock is missed. No hibernation is
+  # wanted, so swap contents need not persist. Configured via
+  # swapDevices[].randomEncryption in hardware-configuration.nix; the LUKS header
+  # Calamares wrote on p3 is now unused.
+
 
   # ESP is only ~1 GB here (Calamares default), and each generation writes a
   # kernel + initrd into it. Cap generations so /boot can't fill up.

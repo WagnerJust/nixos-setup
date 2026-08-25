@@ -27,7 +27,7 @@
     };
 
   swapDevices =
-    [ { device = "/dev/mapper/luks-14212e0a-ef39-40c7-97c0-b23dabff3db9"; }
+    [ { device = "/dev/disk/by-partuuid/d02d4c78-9bc9-4b61-a05f-034fe55d870e"; randomEncryption.enable = true; }
     ];
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
