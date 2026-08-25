@@ -5,7 +5,7 @@
 #   - this file                  : hostname, nixos-hardware modules, swap unlock
 #
 # configuration.nix and home.nix are host-agnostic and shared.
-{ inputs, lib, ... }:
+{ inputs, lib, pkgs, ... }:
 {
   imports = [
     ./hardware-configuration.nix
@@ -42,4 +42,11 @@
     options = [ "nofail" "noatime" "x-systemd.device-timeout=10s" ];
   };
 
+  # This host runs llama.cpp directly, not Ollama — turn the shared Ollama
+  # service off here so it doesn't pull models or hold the GPU.
+  services.ollama.enable = lib.mkForce false;
+
+  # Direct llama.cpp on the RX 7900 XTX (gfx1100), ROCm/HIP backend. Pin the
+  # GPU target so it builds for this arch only. render group for /dev/kfd.
+  users.users.justin.extraGroups = [ "render" ];
 }

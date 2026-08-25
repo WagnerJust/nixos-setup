@@ -118,5 +118,35 @@
       # implementation that ships in nixpkgs; running it has not yet been
       # applied to existing files, so expect a churn diff on first run.
       formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt;
+
+      # ROCm dev shell for building llama.cpp (or anything HIP) by hand against
+      # the RX 7900 XTX (gfx1100). Enter with:  nix develop /etc/nixos#llama-rocm
+      # Then clone whatever llama.cpp version and build with your own flags.
+      devShells.x86_64-linux.llama-rocm =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          rocm = pkgs.rocmPackages;
+        in
+        pkgs.mkShell {
+          packages = with pkgs; [
+            cmake
+            ninja
+            git
+            pkg-config
+            rocm.clr
+            rocm.hipblas
+            rocm.rocblas
+            rocm.rocminfo
+            rocm.rocm-smi
+          ];
+          shellHook = ''
+            export HIPCXX="${rocm.clr.hipClangPath}/clang++"
+            export ROCM_PATH="${rocm.clr}"
+            echo "ROCm llama.cpp dev shell — gfx1100 / RX 7900 XTX"
+            echo "Example build:"
+            echo "  cmake -B build -DGGML_HIP=ON -DCMAKE_HIP_COMPILER=$HIPCXX -DCMAKE_HIP_ARCHITECTURES=gfx1100 -DCMAKE_BUILD_TYPE=Release"
+            echo "  cmake --build build -j"
+          '';
+        };
     };
 }
