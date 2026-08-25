@@ -31,7 +31,7 @@
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "no"; # root: TTY + su only, no SSH
   users.users.justin.openssh.authorizedKeys.keys = [
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEGXrWva+3LnsW+j+SKHtLI575eHRFCvG0nVCDRqQmWu box-access"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFw01ML+s6M74ue7NAqaUOH8h5lxbxn8Q45Rnj+Y74Lr"
   ];
   # LLM weights on the second NVMe (nvme1n1, serial 26026B804673): a bare
   # whole-disk ext4 (no partition table), mounted by filesystem UUID so it can
@@ -50,4 +50,13 @@
   # Direct llama.cpp on the RX 7900 XTX (gfx1100), ROCm/HIP backend. Pin the
   # GPU target so it builds for this arch only. render group for /dev/kfd.
   users.users.justin.extraGroups = [ "render" ];
+  # Always-on desktop: never auto-suspend/hibernate. The shared Noctalia idle
+  # config escalates to `systemctl suspend-then-hibernate` at 15 min idle (laptop
+  # behavior); disabling the sleep targets makes that a harmless no-op here.
+  # Re-enable these if you ever want manual suspend on this box.
+  systemd.targets.sleep.enable = false;
+  systemd.targets.suspend.enable = false;
+  systemd.targets.hibernate.enable = false;
+  systemd.targets.hybrid-sleep.enable = false;
+
 }
