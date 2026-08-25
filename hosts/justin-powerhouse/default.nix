@@ -32,4 +32,14 @@
   users.users.justin.openssh.authorizedKeys.keys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEGXrWva+3LnsW+j+SKHtLI575eHRFCvG0nVCDRqQmWu box-access"
   ];
+  # LLM weights on the second NVMe (nvme1n1, serial 26026B804673): a bare
+  # whole-disk ext4 (no partition table), mounted by filesystem UUID so it can
+  # never be confused with the identical-model OS drive. nofail: a missing or
+  # failed models drive must never block boot. ~645 GB of GGUF files.
+  fileSystems."/home/justin/models" = {
+    device = "/dev/disk/by-uuid/302ef0d7-6f4c-41e6-993e-32075d85104e";
+    fsType = "ext4";
+    options = [ "nofail" "noatime" "x-systemd.device-timeout=10s" ];
+  };
+
 }
