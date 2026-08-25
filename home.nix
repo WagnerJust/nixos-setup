@@ -242,6 +242,13 @@ in
         "panel-toggle"
         "launcher"
       ];
+      # Control center (the owl dashboard), toggled over IPC.
+      "Mod+O".action.spawn = [
+        "noctalia"
+        "msg"
+        "panel-toggle"
+        "control-center"
+      ];
       "Mod+D".action.spawn = "fuzzel";
 
       # Window
