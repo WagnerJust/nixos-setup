@@ -52,8 +52,8 @@ let
   };
 in
 {
-  home.username = "sroberts";
-  home.homeDirectory = "/home/sroberts";
+  home.username = "justin";
+  home.homeDirectory = "/home/justin";
   home.stateVersion = "26.05";
 
   ############################################################
@@ -936,7 +936,7 @@ in
         # username). Lets the repo go public without putting the real
         # email in future commits' diffs / Author lines, while still
         # being correctly attributed on GitHub.
-        email = "44774+sroberts@users.noreply.github.com";
+        email = "justin@baywatchtech.com";
       };
       # Delegate GitHub HTTPS auth to gh so git push uses the token gh stores
       # in the system keyring. Declared here because home-manager renders

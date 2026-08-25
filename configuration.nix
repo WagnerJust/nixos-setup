@@ -311,7 +311,7 @@ in
   programs._1password.enable = true;
   programs._1password-gui = {
     enable = true;
-    polkitPolicyOwners = [ "sroberts" ];
+    polkitPolicyOwners = [ "justin" ];
   };
 
   ############################################################
@@ -357,9 +357,9 @@ in
   ############################################################
   # User
   ############################################################
-  users.users.sroberts = {
+  users.users.justin = {
     isNormalUser = true;
-    description = "Scott";
+    description = "Justin";
     shell = pkgs.zsh;
     extraGroups = [
       "wheel"

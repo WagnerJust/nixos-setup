@@ -25,4 +25,10 @@
   # ESP is only ~1 GB here (Calamares default), and each generation writes a
   # kernel + initrd into it. Cap generations so /boot can't fill up.
   boot.loader.systemd-boot.configurationLimit = lib.mkForce 5;
+
+  # Remote access for this desktop. openFirewall (default true) opens 22.
+  services.openssh.enable = true;
+  users.users.justin.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEGXrWva+3LnsW+j+SKHtLI575eHRFCvG0nVCDRqQmWu box-access"
+  ];
 }
