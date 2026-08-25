@@ -174,7 +174,7 @@ in
   # America/New_York follows EST/EDT (DST-aware). en_US.UTF-8 gives
   # imperial measurement units, US paper sizes, etc.
   ############################################################
-  time.timeZone = "America/New_York";
+  time.timeZone = "America/Denver";
   i18n.defaultLocale = "en_US.UTF-8";
 
   ############################################################

@@ -92,7 +92,7 @@ in
     settings = {
       # Weather + where-am-I. v5 moved the unit under [weather]; [location]
       # geocodes `address`.
-      location.address = "Greenville, SC";
+      location.address = "Denver, CO";
       weather = {
         enabled = true;
         unit = "fahrenheit";
@@ -1141,7 +1141,7 @@ in
     data = ''
       if [ ! -e "$HOME/.face" ]; then
         TMP=$(${pkgs.coreutils}/bin/mktemp)
-        if ${pkgs.curl}/bin/curl -fsSL -o "$TMP" "https://avatars.githubusercontent.com/u/44774?v=4"; then
+        if ${pkgs.curl}/bin/curl -fsSL -o "$TMP" "https://avatars.githubusercontent.com/u/124229209?v=4"; then
           ${pkgs.coreutils}/bin/mv "$TMP" "$HOME/.face"
         else
           ${pkgs.coreutils}/bin/rm -f "$TMP"
