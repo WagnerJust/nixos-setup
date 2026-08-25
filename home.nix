@@ -636,6 +636,7 @@ in
       la = "eza -la";
       tree = "eza --tree";
       cat = "bat";
+      zed = "zeditor";
     };
     # Append ~/.local/bin to PATH for imperatively-installed user binaries:
     # pipx drops console scripts here (see pipx note in home.packages above),

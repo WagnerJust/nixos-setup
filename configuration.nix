@@ -379,6 +379,8 @@ in
     chromium
     discord
     firefox
+    vivaldi
+    vivaldi-ffmpeg-codecs
     localsend
     nautilus
     obsidian
