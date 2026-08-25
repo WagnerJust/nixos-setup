@@ -171,7 +171,7 @@ in
 
   ############################################################
   # Locale + timezone
-  # America/New_York follows EST/EDT (DST-aware). en_US.UTF-8 gives
+  # America/Denver follows MST/MDT (DST-aware). en_US.UTF-8 gives
   # imperial measurement units, US paper sizes, etc.
   ############################################################
   time.timeZone = "America/Denver";

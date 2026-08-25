@@ -932,7 +932,7 @@ in
     enable = true;
     settings = {
       user = {
-        name = "Scott J Roberts";
+        name = "Justin Wagner";
         # GitHub's "no-reply" form for this account (numeric user ID +
         # username). Lets the repo go public without putting the real
         # email in future commits' diffs / Author lines, while still
