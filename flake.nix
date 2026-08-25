@@ -1,5 +1,5 @@
 {
-  description = "Scott's Framework 13 AMD — NixOS + niri + Noctalia (encrypted, hibernate, secure-boot-ready)";
+  description = "justin-powerhouse — NixOS + niri + Noctalia (AMD desktop, encrypted, ROCm)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

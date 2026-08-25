@@ -936,7 +936,7 @@ in
         # username). Lets the repo go public without putting the real
         # email in future commits' diffs / Author lines, while still
         # being correctly attributed on GitHub.
-        email = "justin@baywatchtech.com";
+        email = "124229209+WagnerJust@users.noreply.github.com";
       };
       # Delegate GitHub HTTPS auth to gh so git push uses the token gh stores
       # in the system keyring. Declared here because home-manager renders
