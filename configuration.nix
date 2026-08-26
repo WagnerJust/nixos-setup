@@ -183,6 +183,12 @@ in
   # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
   services.tailscale.enable = true;
+  # DNS via systemd-resolved instead of legacy resolvconf. Tailscale integrates
+  # with resolved over D-Bus; under resolvconf the NetworkManager<->resolvconf
+  # <->tailscaled handoff raced and tailscaled periodically had "no upstream
+  # resolvers set" -> SERVFAIL on every lookup until a link change forced a
+  # re-read (looked like "network connected but nothing works" after idle/lock).
+  services.resolved.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
   # Goodix fingerprint reader. fprintd runs the daemon; the PAM hooks
