@@ -51,10 +51,14 @@
   # GPU target so it builds for this arch only. render group for /dev/kfd.
   users.users.justin.extraGroups = [ "render" ];
 
-  # Let the USB keyboard/mouse wake the box from suspend (their power/wakeup
-  # ships disabled by default). Also requires "USB wake from S3"/ErP-off in BIOS.
-  services.udev.extraRules = ''
-    ACTION=="add", SUBSYSTEM=="usb", DRIVER=="usb", ATTRS{bInterfaceClass}=="03", ATTR{power/wakeup}="enabled"
-  '';
+
+  # Always-on box: never auto-suspend/hibernate — it must stay reachable over
+  # SSH and keep serving LLMs while idle. The display still turns off and the
+  # session still locks; only the machine sleeping is disabled. Unmask these if
+  # you ever want manual suspend.
+  systemd.targets.sleep.enable = false;
+  systemd.targets.suspend.enable = false;
+  systemd.targets.hibernate.enable = false;
+  systemd.targets.hybrid-sleep.enable = false;
 
 }

@@ -173,19 +173,14 @@ in
       shell.polkit_agent = true;
 
       # Idle escalation, native to Noctalia's idle manager. Named behaviors
-      # under [idle.behavior.*]: a 10-min lock, then plain suspend at
-      # 30 min. `noctalia:session lock` is the internal action; the bare
+      # under [idle.behavior.*]: a 10-min lock. No auto-suspend — this
+      # box stays always-on and remotely reachable. `noctalia:session lock` is the internal action; the bare
       # systemctl command is run as a user command. See services.swayidle
       # below for the one job (lock-on-lid-close) this can't cover.
       idle.behavior = {
         lock = {
           timeout = 600;
           command = "noctalia:session lock";
-          enabled = true;
-        };
-        suspend = {
-          timeout = 1800;
-          command = "systemctl suspend";
           enabled = true;
         };
       };
