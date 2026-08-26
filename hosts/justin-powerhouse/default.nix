@@ -9,6 +9,7 @@
 {
   imports = [
     ./hardware-configuration.nix
+    ./llama-power.nix
     inputs.nixos-hardware.nixosModules.common-cpu-amd
     inputs.nixos-hardware.nixosModules.common-gpu-amd
     inputs.nixos-hardware.nixosModules.common-pc-ssd
