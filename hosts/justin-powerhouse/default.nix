@@ -50,13 +50,11 @@
   # Direct llama.cpp on the RX 7900 XTX (gfx1100), ROCm/HIP backend. Pin the
   # GPU target so it builds for this arch only. render group for /dev/kfd.
   users.users.justin.extraGroups = [ "render" ];
-  # Always-on desktop: never auto-suspend/hibernate. The shared Noctalia idle
-  # config escalates to `systemctl suspend-then-hibernate` at 15 min idle (laptop
-  # behavior); disabling the sleep targets makes that a harmless no-op here.
-  # Re-enable these if you ever want manual suspend on this box.
-  systemd.targets.sleep.enable = false;
-  systemd.targets.suspend.enable = false;
-  systemd.targets.hibernate.enable = false;
-  systemd.targets.hybrid-sleep.enable = false;
+
+  # Let the USB keyboard/mouse wake the box from suspend (their power/wakeup
+  # ships disabled by default). Also requires "USB wake from S3"/ErP-off in BIOS.
+  services.udev.extraRules = ''
+    ACTION=="add", SUBSYSTEM=="usb", DRIVER=="usb", ATTRS{bInterfaceClass}=="03", ATTR{power/wakeup}="enabled"
+  '';
 
 }
