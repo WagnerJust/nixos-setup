@@ -201,6 +201,110 @@ let
       ) >/dev/null 2>&1 &
     '';
   };
+
+  # llama-power — a fuzzel menu for the llama.cpp hot-swap proxy, which runs as
+  # a systemd *user* unit on this host (hosts/justin-powerhouse/llama-power.nix).
+  # Start/stop/restart, plus a read-only view of the roster and of what is
+  # actually resident on the GPU right now.
+  #
+  # Why a menu and not a live readout in the bar: `custom_button` is the only
+  # user-programmable bar widget Noctalia 5 has (the other 31 types are fixed),
+  # and its label/glyph/tooltip are static strings — nothing polls a command and
+  # renders its stdout. So the live state sits one keystroke away instead of
+  # always-on in the bar.
+  #
+  # Three routes to the same script:
+  #   Mod+M                    niri bind, in programs.niri.settings.binds below
+  #   Mod+Space -> "llama"     the xdg.desktopEntries entry below
+  #   the bar button           the `llama-power` widget in programs.noctalia
+  #
+  # All of it is local: the proxy listens on 127.0.0.1:8080 on this machine and
+  # the unit is a --user unit, so there is no ssh and no sudo anywhere here.
+  llamaPowerMenu = pkgs.writeShellApplication {
+    name = "llama-power-menu";
+    runtimeInputs = with pkgs; [
+      coreutils
+      curl
+      fuzzel
+      ghostty
+      jq
+      libnotify
+      systemd
+    ];
+    text = ''
+      UNIT=llama-power
+      PROXY=http://127.0.0.1:8080
+
+      # The unit sends both streams to files (StandardOutput=append:…), so
+      # journalctl holds next to nothing — these two are the real logs.
+      PROXY_LOG="$HOME/llama-power-proxy.log"
+      MODEL_LOG="$HOME/llama-power.log"
+
+      menu() { fuzzel --dmenu --prompt "$1> "; }
+      toast() { notify-send -a llama-power "llama-power" "$1"; }
+
+      # /health is the whole state in one call: per-group running flag,
+      # current_model, and the roster. No answer is NOT the same as "stopped" —
+      # the proxy needs a moment to bind after a start, and loading a giant
+      # model can keep it busy for 10-30s.
+      health=$(curl -sf -m 3 "$PROXY/health" || true)
+
+      if [ -n "$health" ]; then
+        resident=$(jq -r '
+          [ .groups | to_entries[]
+            | select(.value.running)
+            | "\(.value.current_model) [\(.key)]"
+          ] | join(", ")' <<<"$health")
+        [ -n "$resident" ] || resident="up, nothing resident"
+        header="● $resident"
+        actions=("Restart" "Stop" "Models" "Logs")
+      elif systemctl --user is-active --quiet "$UNIT"; then
+        header="◐ unit up, proxy not answering yet"
+        actions=("Restart" "Stop" "Logs")
+      else
+        header="○ stopped"
+        actions=("Start" "Logs")
+      fi
+
+      # fuzzel exits non-zero on Escape; that is a cancel, not a failure.
+      choice=$(printf '%s\n' "$header" "''${actions[@]}" | menu llama-power) || exit 0
+
+      case "$choice" in
+        "$header")
+          # Picking the status line just re-reads /health.
+          exec "$0"
+          ;;
+        Start)
+          systemctl --user start "$UNIT"
+          toast "starting"
+          ;;
+        Stop)
+          systemctl --user stop "$UNIT"
+          toast "stopped"
+          ;;
+        Restart)
+          systemctl --user restart "$UNIT"
+          toast "restarting"
+          ;;
+        Models)
+          # Read-only. The proxy picks the model per request and hot-swaps on
+          # its own, so a pick here only bounces back to the main menu; ●
+          # marks what is resident.
+          jq -r '.groups | to_entries[]
+                 | .key as $group | .value as $g
+                 | $g.models[]
+                 | (if . == $g.current_model then "● " else "  " end)
+                   + . + "  [" + $group + "]"' <<<"$health" \
+            | menu models >/dev/null || true
+          exec "$0"
+          ;;
+        Logs)
+          ghostty -e tail -n 200 -F "$PROXY_LOG" "$MODEL_LOG" &
+          ;;
+        *) exit 0 ;;
+      esac
+    '';
+  };
 in
 {
   home.username = "justin";
@@ -323,6 +427,68 @@ in
       # force-disabled in configuration.nix so the two don't race.
       shell.polkit_agent = true;
 
+      # Bar layout. Defining [bar.default] REPLACES the built-in lane lists
+      # rather than merging into them, so all three lanes have to be spelled
+      # out. These are Noctalia 5.0.0's own defaults (recovered with
+      # `noctalia config export full`) with `llama-power` added next to the
+      # control-center. Unset bar fields still fall back to defaults; only the
+      # lanes are all-or-nothing.
+      bar.default = {
+        start = [
+          "launcher"
+          "wallpaper"
+          "workspaces"
+        ];
+        center = [ "clock" ];
+        end = [
+          "media"
+          "tray"
+          "notifications"
+          "clipboard"
+          "network"
+          "bluetooth"
+          "volume"
+          "brightness"
+          "battery"
+          "llama-power"
+          "control-center"
+          "session"
+        ];
+      };
+
+      # The bar button. `custom_button` is the only widget type that runs
+      # arbitrary commands, and its label is a fixed string — so this is a
+      # launcher for the menu, not a status readout. Left click opens the
+      # menu, right click restarts the unit outright.
+      #
+      # NOTE: the published docs show an `[widget.NAME.actions]` block with
+      # `left =` / `right =` keys. That is NOT what 5.0.0 accepts — it drops
+      # the block with `WARN widget.<name>.actions: unknown setting` and the
+      # button silently does nothing. The real keys are flat and follow the
+      # same vocabulary as `bar.default.dead_zone`: command (left),
+      # right_command, middle_command, scroll_up_command, scroll_down_command.
+      # There is no left_command, back_command or forward_command.
+      #
+      # Values are plain commands. The `noctalia:` prefix is reserved for
+      # internal actions (cf. idle.behavior.lock.command above); there is no
+      # `exec ` wrapper, and an `exec ...` value would be run as a program
+      # literally named "exec".
+      #
+      # `noctalia config validate` only WARNS on unknown settings and still
+      # exits 0, so the home-manager module's build-time validation will not
+      # catch a typo here — check `noctalia config validate` by hand after
+      # touching this block.
+      widget.llama-power = {
+        type = "custom_button";
+        glyph = "circuit-pushbutton";
+        tooltip = "llama-power — LLM proxy";
+        command = "${llamaPowerMenu}/bin/llama-power-menu";
+        # Absolute path on purpose: this is exec'd by Noctalia, not by a
+        # login shell, and a command that is not found fails silently —
+        # exactly the way the wrong `actions` block did.
+        right_command = "/run/current-system/sw/bin/systemctl --user restart llama-power";
+      };
+
       # Idle handling, native to Noctalia's idle manager. Named behaviors
       # under [idle.behavior.*]: one behavior, a 10-min lock, running the
       # internal action `noctalia:session lock`. No auto-suspend behavior —
@@ -401,6 +567,9 @@ in
       # GlobalShortcuts portal here is backed by xdg-desktop-portal-gnome,
       # which needs Mutter). A compositor-level bind always fires.
       "Mod+P".action.spawn = "opquick";
+      # llama-power control menu (fuzzel). Also on the bar and in the
+      # Mod+Space launcher — see the `llamaPowerMenu` derivation.
+      "Mod+M".action.spawn = "llama-power-menu";
 
       # Window
       "Mod+Q".action.close-window = [ ];
@@ -732,6 +901,10 @@ in
     # the `let` above for why the built-in hotkey can't work under niri.
     # Bound to Mod+P in programs.niri.
     opquick
+    # llama.cpp proxy control — see the `llamaPowerMenu` derivation in the
+    # `let` above. Bound to Mod+M, listed in the Mod+Space launcher, and
+    # wired to a bar button in programs.noctalia.
+    llamaPowerMenu
     # pipx itself is still NOT installed via Nix: build-time deps in current
     # nixos-unstable (black, black[extras], nox) cycle through transient
     # failures. Install pipx + jsongrep (not in nixpkgs) manually post-boot
@@ -1415,6 +1588,24 @@ in
   # for itself — so `xdg-open https://...` (e.g. `gh auth refresh`) opens
   # Signal instead of a browser. home-manager replaces mimeapps.list with a
   # store-path symlink, which Signal can't clobber.
+  # Puts the llama-power menu in Noctalia's launcher (Mod+Space), so it is
+  # reachable by typing "llama" / "llm" / "model" the same way an app is. The
+  # launcher indexes XDG desktop entries, and home-manager writes this one to
+  # ~/.local/share/applications.
+  xdg.desktopEntries.llama-power = {
+    name = "llama-power";
+    genericName = "LLM proxy control";
+    comment = "Start, stop and inspect the llama.cpp hot-swap proxy";
+    exec = "${llamaPowerMenu}/bin/llama-power-menu";
+    icon = "applications-science";
+    terminal = false;
+    categories = [
+      "Utility"
+      "System"
+    ];
+    settings.Keywords = "llama;llm;model;ai;proxy;gpu;inference;";
+  };
+
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
