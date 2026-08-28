@@ -6,13 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A personal NixOS flake managing every machine the owner runs. It is the **source of truth** for each system — the running machine is a function of these files. The layout is multi-host: each machine is a directory under `hosts/`, and `flake.nix` discovers them automatically.
 
-The first (and currently only) host is `sjr-fw13`, a Framework 13 AMD (Ryzen 7040) laptop running niri + Noctalia (Quickshell) on an encrypted disk with hibernation-capable swap. Most of the shared `configuration.nix` / `home.nix` is hardware-agnostic; a future workstation or NUC would slot in as a new `hosts/<name>/` without touching shared files. (When a non-laptop host actually lands, expect to revisit laptop-specific bits — lid-switch handling, hibernation timing, fingerprint, `power-profiles-daemon` — and move what doesn't apply into per-host modules.)
+The only host is `justin-powerhouse`: an AMD Ryzen 7 5800X desktop (MSI MS-7C95) with a Radeon RX 7900 XTX (gfx1100), 32 GB RAM, and two NVMe drives, running niri + Noctalia (Quickshell) on an encrypted root. It is an **always-on box** — the sleep/suspend/hibernate systemd targets are disabled outright so it stays SSH-reachable and keeps serving LLMs while idle. The second NVMe is a bare whole-disk ext4 mounted at `/home/justin/models` (~645 GB of GGUF weights).
+
+Most of the shared `configuration.nix` / `home.nix` is hardware-agnostic; a future machine slots in as a new `hosts/<name>/` without touching shared files.
+
+> **Note:** this repo previously managed a Framework 13 AMD laptop, `sjr-fw13`, which was removed in commit `4c3e656`. Shared `configuration.nix` still carries settings that only made sense on that laptop — see *Laptop leftovers* below before trusting a comment in there.
 
 The repo is built to be cloned onto a fresh machine from the NixOS live ISO and installed against. Each host's `hardware-configuration.nix` (generated per-machine by `nixos-generate-config`) is **committed** under `hosts/<hostname>/` — flakes only evaluate git-tracked files, and the LUKS UUIDs it carries are identifiers, not secrets. To stand up a new machine, run `scripts/new-host.sh` on it; see `hosts/README.md`.
 
 ## Commands
 
-All builds go through the flake. Substitute `<host>` for the directory name under `hosts/` (currently `sjr-fw13` — `nix flake show` lists every host the flake exposes).
+All builds go through the flake. Substitute `<host>` for the directory name under `hosts/` (currently `justin-powerhouse` — `nix flake show` lists every host the flake exposes).
 
 ```bash
 # Rebuild and switch (the default verb after any edit)
@@ -45,11 +49,13 @@ Shared, host-agnostic files in the repo root; per-machine state under `hosts/`:
 - **`flake.nix`** — Inputs (nixpkgs unstable, home-manager, nixos-hardware, niri-flake, noctalia, claude-code-nix) and the `nixosConfigurations` output. It does **not** hardcode a host: an `mkHost` helper builds each machine from its `hosts/<name>/` directory plus the shared `configuration.nix` + `home.nix`, and `builtins.readDir ./hosts` auto-discovers every host (so adding a machine never touches `flake.nix`). All inputs `follows = "nixpkgs"` so there is one nixpkgs in the closure. The `lanzaboote` input is **commented out** by design — see *Secure Boot* below.
 - **`configuration.nix`** — Shared system-level config: bootloader, PipeWire, networking, niri + greetd/tuigreet, Docker, Ollama (ROCm), the `sroberts` user, and the system-wide GUI apps (`_1password-gui`, `chromium`, `obsidian`, …). Host-agnostic — no hostname, no per-disk UUIDs. The function signature is `{ config, lib, pkgs, inputs, … }`.
 - **`home.nix`** — User-level (home-manager): Noctalia config, niri input + binds, CLI/TUI tooling, zsh + integrations (zoxide, fzf, eza, bat, starship, mise), and `home.activation.*` hooks for the imperative gaps Nix can't declare (LazyVim starter, CyberChef download, post-install TODO.md). Shared across hosts.
-- **`hosts/<hostname>/`** — Everything machine-specific. `default.nix` sets `networking.hostName`, imports the `nixos-hardware` module for that exact model, and carries the hibernation swap LUKS unlock + `boot.resumeDevice`. `hardware-configuration.nix` (committed) encodes the root LUKS UUID, filesystems, and swapDevices. The only host today is `hosts/sjr-fw13/`. See `hosts/README.md` and `scripts/new-host.sh` for adding one.
+- **`hosts/<hostname>/`** — Everything machine-specific. `default.nix` sets `networking.hostName` and imports the `nixos-hardware` modules for that machine. `hardware-configuration.nix` (committed) encodes the root LUKS UUID, filesystems, and swapDevices. The only host today is `hosts/justin-powerhouse/`, which also carries `llama-power.nix` (a user service running a llama.cpp hot-swap proxy), the `/home/justin/models` mount, the SSH/authorized-keys block, and the `lib.mkForce` overrides that turn off Ollama and the sleep targets from shared config. See `hosts/README.md` and `scripts/new-host.sh` for adding one.
 
 ### Disk layout — two supported paths
 
-**Default (Calamares install):** ESP + LUKS-encrypted ext4 root. If the user picked "Swap with Hibernate" in Calamares, a hibernation-sized swap partition is also created and listed in `hardware-configuration.nix`'s `swapDevices`. The hibernation swap unlock + `boot.resumeDevice` live in the host module (`hosts/<hostname>/default.nix`), not in `configuration.nix` — they're per-disk LUKS UUIDs. No LVM in this layout.
+**Default (Calamares install) — what `justin-powerhouse` actually uses:** ESP + LUKS-encrypted ext4 root, plus a swap partition. **Hibernation is deliberately not set up here.** Swap uses `randomEncryption.enable = true` (a fresh key every boot), which means no passphrase prompt at boot and no emergency-mode risk if an unlock is missed — but swap contents cannot survive a reboot, so there is no `boot.resumeDevice`. That is the right trade for an always-on desktop that never sleeps. No LVM in this layout.
+
+The ESP is only ~1 GB (Calamares default) and every generation writes a kernel + initrd into it, so the host module caps `boot.loader.systemd-boot.configurationLimit` at 5 to keep `/boot` from filling up.
 
 **Appendix (manual LVM-on-LUKS):**
 
@@ -60,7 +66,7 @@ nvme0n1p2  LUKS2 → LVM "vg"
              vg/root  rest    (encrypted, ext4)
 ```
 
-This path is for users who specifically want the LVM layout (multi-volume management, easier resize). It requires setting `boot.resumeDevice = "/dev/vg/swap"` in the host module (`hosts/<hostname>/default.nix`) before the install, instead of the by-UUID swap unlock the Calamares path uses. The path is a stable LVM device, independent of `hardware-configuration.nix`. Hibernation needs persistent-key encrypted swap ≥ RAM, which is why swap lives *inside* LUKS rather than as a random-key swap partition.
+This path is for users who specifically want the LVM layout (multi-volume management, easier resize), **and it is the path to take if a future host needs hibernation** — which no current host does. It requires setting `boot.resumeDevice = "/dev/vg/swap"` in the host module (`hosts/<hostname>/default.nix`) before the install. The path is a stable LVM device, independent of `hardware-configuration.nix`. Hibernation needs persistent-key encrypted swap ≥ RAM, which is why swap lives *inside* LUKS rather than as the random-key swap partition `justin-powerhouse` uses.
 
 The Calamares teardown lines in `configuration.nix` (`services.xserver.enable = false`, `services.displayManager.gdm.enable = false`, `services.desktopManager.gnome.enable = false`) are harmless on the manual path — they're disabling things that were never installed.
 
@@ -70,11 +76,20 @@ System side enables `programs.niri` and `services.greetd` (tuigreet on tty1 laun
 
 The lock screen is Noctalia's own (its own PAM context, raised via `WlSessionLock`). **Noctalia does not subscribe to logind's `Lock` signal**, so `loginctl lock-session` is a no-op — locking must go through Noctalia's IPC (`noctalia-shell ipc call lockScreen lock`), which is what the `Super+Alt+L` bind and swayidle's `before-sleep` use. Media/brightness keybinds in `home.nix` still go through `wpctl`, `playerctl`, and `brightnessctl` (shell-agnostic).
 
-Idle is driven by **Noctalia's own idle manager** (seeded in `home.activation.noctaliaConfigSeed`): a 5-min lock (`idle.lockTimeout`) plus an `idle.customCommands` entry running `systemctl suspend-then-hibernate` at 15 min. Noctalia's *built-in* idle-suspend is left disabled (`idle.suspendTimeout = 0`) because it only does a plain `systemctl suspend`; the custom command is a separate monitor that just runs the command, so it does the hibernate escalation cleanly. **swayidle** (in `home.nix`) is kept for one job only: its `before-sleep` hook locks (via Noctalia's IPC) ahead of a sleep Noctalia didn't initiate — i.e. a lid close — since Noctalia has no lock-on-external-suspend hook.
+Idle is driven by **Noctalia's own idle manager**, configured declaratively via `programs.noctalia.settings.idle.behavior`: a single named behavior, `lock`, at `timeout = 600` (10 min) running the internal action `noctalia:session lock`. **There is no auto-suspend behavior** — this box stays always-on and remotely reachable, and the sleep targets are masked at the host level anyway. **swayidle** (in `home.nix`) is kept only for its `before-sleep` hook, which locks via Noctalia's IPC ahead of a sleep Noctalia didn't initiate; with sleep disabled on this host that hook is effectively dormant, but it costs nothing and is correct for any future host that does sleep.
 
-### Power (Framework 13 / Ryzen 7040)
+### Laptop leftovers in shared config
 
-`power-profiles-daemon` is enabled in shared `configuration.nix`; `tlp` is **explicitly disabled**. This is Framework's recommendation for Ryzen 7040 — TLP misbehaves on this platform. Don't swap them without a reason on `sjr-fw13`. When a non-Framework / non-7040 host lands, this is one of the things to move out of shared config and into that host's `default.nix` (or override there): TLP is the more common pick on other hardware, and a headless box may want neither.
+`sjr-fw13` was deleted (`4c3e656`) but shared `configuration.nix` was never cleaned up after it. These settings are still applied to a desktop that has no battery, no lid, and no fingerprint reader. None of them break the build, and most are inert — but **do not read their inline comments as a description of the current machine**:
+
+| Setting | Comment claims | Reality on `justin-powerhouse` |
+| --- | --- | --- |
+| `services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate"` | lid close escalates to hibernate | No lid. Dead config — the sleep targets are masked in the host module anyway. |
+| `services.power-profiles-daemon.enable = true` / `services.tlp.enable = false` | "NOT tlp on Ryzen 7040", per Framework's recommendation | Ryzen 5800X desktop. The 7040 rationale doesn't apply; a mains-powered desktop arguably wants neither. |
+| `services.fprintd.enable = true` + the PAM wiring | Goodix fingerprint reader | No fingerprint reader. `fprintd` runs with nothing to talk to. |
+| `services.ollama` with `pkgs.ollama-rocm` | "Radeon 780M iGPU" | Overridden — the host sets `services.ollama.enable = lib.mkForce false` and runs llama.cpp on the RX 7900 XTX instead. The 780M comment refers to the laptop's iGPU. |
+
+Cleaning these up is a real task, not just a doc fix: the fprintd PAM block interacts with Noctalia's lock screen, so removing it needs testing rather than a blind delete.
 
 ## Editing patterns
 
@@ -93,10 +108,12 @@ The lanzaboote block uses `lib.mkForce` to override systemd-boot; `lib` is alrea
 
 ## What's *not* declarative (by design)
 
-Listed in `home.activation.todoMd` (the generated `~/TODO.md`): authenticating Claude Code, signing into 1Password / Gmail / GitHub / Slack / Discord / Signal / Zoom, setting wallpaper in Noctalia (its Material You-style theme derives from the wallpaper), Obsidian Sync, Typora license, Chromium extensions, pulling Ollama models, `sudo fwupdmgr update`. These are credentials, account state, and firmware updates — not something Nix should own.
+Listed in `home.activation.todoMd` (the generated `~/TODO.md`): authenticating Claude Code, signing into 1Password / Gmail / GitHub / Slack / Discord / Signal / Zoom, setting wallpaper in Noctalia (its Material You-style theme derives from the wallpaper), Obsidian Sync, Typora license, Chromium extensions, `sudo fwupdmgr update`. These are credentials, account state, and firmware updates — not something Nix should own.
+
+Also not declarative on this host: the **llama.cpp build itself**. `llama-power.nix` runs a hand-built HIP `llama-server` from `~/Src/llama.cpp/build-hip/bin`, built in the flake's `llama-rocm` devshell — it is not a Nix derivation, and it must be rebuilt after any `nix flake update` because its baked RPATH points at store paths that update will garbage-collect. The runbook is in `~/Side/powerhouse/docs/llama-power.md`, outside this repo. (`~/TODO.md` still mentions pulling Ollama models; Ollama is force-disabled on this host, so that line is stale.)
 
 ## Reference docs in this repo
 
-- **`INSTALL.md`** — Single canonical install runbook for the Framework 13 AMD host (`sjr-fw13`): partition → encrypt → install → set up the working copy → verify. Other machines follow the same shape (Calamares base → `scripts/new-host.sh` → `nixos-rebuild`) with different hardware-specific values; `INSTALL.md` is the template. Includes the auth model (token for the clone, then build from the local path so Nix never sees the token), the "Stack at a glance" rationale table, known gotchas, and Arch+DankLinux migration notes.
+- **`INSTALL.md`** — The install runbook: partition → encrypt → install → set up the working copy → verify. Includes the auth model (token for the clone, then build from the local path so Nix never sees the token), the "Stack at a glance" rationale table, known gotchas, and Arch+DankLinux migration notes. **Stale:** it is still written against the removed Framework 13 host (`sjr-fw13`) and its hibernation swap, so its hardware-specific values do not match `justin-powerhouse`. The overall shape (Calamares base → `scripts/new-host.sh` → `nixos-rebuild`) is still the template to follow.
 - **`hosts/README.md`** — The per-host layout and the runbook for standing up a new machine with `scripts/new-host.sh` (deterministic config across different hardware).
 - **`secure-boot.md`** — lanzaboote enrollment runbook (hardware-agnostic for the `sbctl` steps; Framework-specific BIOS quirks flagged inline), including optional TPM2 LUKS auto-unlock and recovery from a bricked boot.
