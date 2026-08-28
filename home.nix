@@ -50,6 +50,122 @@ let
       platforms = [ "x86_64-linux" ];
     };
   };
+
+  # 1Password Quick Access, rebuilt for niri. Two upstream gaps make this
+  # necessary:
+  #
+  #   1. 1Password for Linux has no native-app autofill. Its only fill path
+  #      is the browser extension over native messaging, so Electron apps
+  #      (Obsidian, Signal, Slack) get nothing. "Universal Autofill" is
+  #      macOS/Windows only.
+  #   2. The built-in Ctrl+Shift+Space hotkey can't register under niri.
+  #      Wayland has no global key grabs, so it needs the GlobalShortcuts
+  #      portal; the only backend here (xdg-desktop-portal-gnome) implements
+  #      it by calling into Mutter, which isn't running. Registration fails
+  #      silently.
+  #
+  # A niri bind sidesteps both — compositor-level binds always fire, and the
+  # `op` CLI reads the vault directly. Flow: pick item → pick field →
+  # clipboard, auto-cleared after 45s. See Mod+P in programs.niri below.
+  #
+  # Deliberately clipboard-only, no synthetic typing: `wtype` would work
+  # (niri does advertise zwp_virtual_keyboard_manager_v1) but it has to guess
+  # the form shape, and guessing wrong types your username into a note.
+  opquick = pkgs.writeShellApplication {
+    name = "opquick";
+    runtimeInputs = with pkgs; [
+      coreutils
+      fuzzel
+      jq
+      libnotify
+      wl-clipboard
+    ];
+    text = ''
+      # Seconds before the clipboard is wiped.
+      CLEAR_AFTER=45
+
+      # Desktop-app integration requires the setgid wrapper, NOT the bare
+      # store binary: /run/wrappers/bin/op runs setgid `onepassword-cli`,
+      # which is how the desktop app authenticates the caller. Putting
+      # pkgs._1password-cli in runtimeInputs would shadow this on PATH and
+      # silently break auth — that's why it isn't listed above.
+      OP=/run/wrappers/bin/op
+
+      die() {
+        notify-send -u critical -a 1Password "Quick Access" "$1"
+        exit 1
+      }
+
+      [ -x "$OP" ] || die "op wrapper missing — is programs._1password enabled?"
+
+      if ! "$OP" account list --format json 2>/dev/null | jq -e 'length > 0' >/dev/null; then
+        die "1Password CLI isn't connected. Enable Settings → Developer → Integrate with 1Password CLI."
+      fi
+
+      items=$("$OP" item list --format json) || die "couldn't list items"
+      jq -e 'length > 0' <<<"$items" >/dev/null || die "no items in vault"
+
+      # --dmenu0 (NUL-separated) so a title containing a newline can't split
+      # an entry; --index returns the position, avoiding a fragile
+      # display-string round-trip back to an item ID.
+      idx=$(jq -j '.[]
+          | .title
+            + (if (.additional_information // "") == "" then ""
+               else "  - " + .additional_information end)
+            + "\u0000"' <<<"$items" \
+        | fuzzel --dmenu0 --index --prompt "1password> ") || exit 0
+      [ -n "$idx" ] || exit 0
+
+      id=$(jq -j --argjson i "$idx" '.[$i].id' <<<"$items")
+      title=$(jq -j --argjson i "$idx" '.[$i].title' <<<"$items")
+
+      item=$("$OP" item get "$id" --format json --reveal) || die "couldn't read $title"
+
+      # Keep only fields that carry a value. OTP entries are surfaced as the
+      # current code (.totp), never the otpauth:// seed. Rank puts the field
+      # you almost always want first.
+      fields=$(jq -c '
+        [ .fields[]?
+          | select(((.totp // .value) // "") != "")
+          | { label: (.label // .id // "field")
+            , value: (.totp // .value)
+            , rank: (if .id == "password" then 0
+                     elif .type == "OTP" then 1
+                     elif .id == "username" then 2
+                     else 3 end)
+            }
+        ] | sort_by(.rank)' <<<"$item")
+
+      count=$(jq -j 'length' <<<"$fields")
+      [ "$count" -gt 0 ] || die "$title has no fields with values"
+
+      if [ "$count" -eq 1 ]; then
+        fidx=0
+      else
+        fidx=$(jq -j '.[] | "\(.label)\u0000"' <<<"$fields" \
+          | fuzzel --dmenu0 --index --prompt "$title> ") || exit 0
+      fi
+      [ -n "$fidx" ] || exit 0
+
+      label=$(jq -j --argjson i "$fidx" '.[$i].label' <<<"$fields")
+      secret=$(jq -j --argjson i "$fidx" '.[$i].value' <<<"$fields")
+
+      # Piped, never passed as argv — argv is world-readable via /proc.
+      printf '%s' "$secret" | wl-copy
+
+      notify-send -a 1Password "Copied $label" "$title — clears in ''${CLEAR_AFTER}s"
+
+      # Detached so the keybind returns immediately. The guard means a clear
+      # only fires if the clipboard STILL holds our secret, so anything you
+      # copy in the meantime survives.
+      (
+        sleep "$CLEAR_AFTER"
+        if [ "$(wl-paste --no-newline 2>/dev/null || true)" = "$secret" ]; then
+          wl-copy --clear
+        fi
+      ) >/dev/null 2>&1 &
+    '';
+  };
 in
 {
   home.username = "justin";
@@ -245,6 +361,11 @@ in
         "control-center"
       ];
       "Mod+D".action.spawn = "fuzzel";
+      # 1Password Quick Access. 1Password's own Ctrl+Shift+Space can't
+      # register under niri (Wayland has no global grabs; the
+      # GlobalShortcuts portal here is backed by xdg-desktop-portal-gnome,
+      # which needs Mutter). A compositor-level bind always fires.
+      "Mod+P".action.spawn = "opquick";
 
       # Window
       "Mod+Q".action.close-window = [ ];
@@ -557,6 +678,10 @@ in
     q-text-as-data
     qq
     fizzy-cli
+    # 1Password Quick Access replacement — see the `opquick` derivation in
+    # the `let` above for why the built-in hotkey can't work under niri.
+    # Bound to Mod+P in programs.niri.
+    opquick
     # pipx itself is still NOT installed via Nix: build-time deps in current
     # nixos-unstable (black, black[extras], nox) cycle through transient
     # failures. Install pipx + jsongrep (not in nixpkgs) manually post-boot
