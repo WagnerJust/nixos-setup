@@ -780,6 +780,72 @@ in
     initContent = ''
       typeset -U path
       path+=("$HOME/.local/bin")
+
+      ##########################################################
+      # Completion
+      #
+      # enableCompletion above only runs `autoload -U compinit && compinit`.
+      # home-manager sets no zstyles at all, which leaves stock zsh defaults:
+      # case-sensitive matching, no menu, no colors, no group headings. Every
+      # zstyle below is that missing configuration — none of it is terminal
+      # specific.
+      ##########################################################
+
+      # Matchers are tried in order, so an exact case-sensitive hit still
+      # wins: case-insensitive, then partial-word (fo-ba -> foo-bar), then
+      # substring anywhere.
+      zstyle ':completion:*' matcher-list \
+        'm:{a-zA-Z}={A-Za-z}' \
+        'r:|[._-]=* r:|=*' \
+        'l:|=* r:|=*'
+
+      # Color the candidate list like ls, and group candidates under headings
+      # ("[branches]", "[files]"). fzf-tab needs BOTH of these — the
+      # descriptions format is what enables its group support, and
+      # list-colors is what it reads to colorize entries.
+      zstyle ':completion:*' list-colors ''${(s.:.)LS_COLORS}
+      zstyle ':completion:*' group-name ""
+      zstyle ':completion:*:descriptions' format '%F{cyan}%B[%d]%b%f'
+      zstyle ':completion:*:warnings' format '%F{red}no matches%f'
+
+      # Cache the slow completers (kubectl's verb tree, systemctl unit lists).
+      zstyle ':completion:*' use-cache on
+      zstyle ':completion:*' cache-path "$HOME/.cache/zsh/compcache"
+      [[ -d "$HOME/.cache/zsh" ]] || mkdir -p "$HOME/.cache/zsh"
+
+      # Complete from the middle of a word (cursor in `fo|bar`), and land the
+      # cursor at the end after accepting. AUTO_MENU opens the menu on a
+      # second Tab. LIST_BEEP off: ambiguity is normal, not an error.
+      setopt AUTO_MENU COMPLETE_IN_WORD ALWAYS_TO_END
+      unsetopt LIST_BEEP
+
+      # fzf-tab swaps zsh's menu for an fzf picker: type to filter, with a
+      # preview pane. zsh's own menu must be OFF ("menu no", not "menu
+      # select") — fzf-tab needs to capture the unambiguous prefix itself,
+      # and the two menus fight otherwise.
+      #
+      # Load order caveat: fzf-tab wants to be sourced after compinit but
+      # before widget-wrapping plugins. home-manager emits compinit and
+      # zsh-autosuggestions back-to-back at the top of .zshrc with no slot
+      # between them, so this lands after autosuggestions. Harmless in
+      # practice (autosuggestions re-wraps lazily); if a stale suggestion
+      # ever lingers after accepting a completion, that's the cause.
+      zstyle ':completion:*' menu no
+      source ${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh
+
+      # Inherit FZF_DEFAULT_OPTS so the picker matches programs.fzf above.
+      zstyle ':fzf-tab:*' use-fzf-default-opts yes
+      # `<` / `>` cycle between groups when a completion has several.
+      zstyle ':fzf-tab:*' switch-group '<' '>'
+      # Previews: directory listing when completing a path, file contents
+      # otherwise. Absolute store paths — .zshrc is sourced before any
+      # PATH-dependent assumption is safe.
+      zstyle ':fzf-tab:complete:cd:*' fzf-preview \
+        '${pkgs.eza}/bin/eza -1 --color=always --icons $realpath'
+      zstyle ':fzf-tab:complete:*:*' fzf-preview \
+        '[[ -d $realpath ]] && ${pkgs.eza}/bin/eza -1 --color=always --icons $realpath || ${pkgs.bat}/bin/bat --color=always --style=numbers --line-range=:100 $realpath 2>/dev/null'
+      # git checkout candidates are already in a meaningful order.
+      zstyle ':completion:*:git-checkout:*' sort false
     '';
   };
 
