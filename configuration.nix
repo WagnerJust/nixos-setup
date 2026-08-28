@@ -377,6 +377,7 @@ in
   hardware.enableRedistributableFirmware = true;
   fonts.packages = with pkgs; [
     nerd-fonts.jetbrains-mono
+    nerd-fonts.hack # ghostty's font-family, set in ghostty/common.conf
     noto-fonts
     noto-fonts-color-emoji
   ];

@@ -999,12 +999,19 @@ in
   # so our read-only home-manager symlink is never materialized/clobbered
   # (that clobber is exactly what broke the first v5 rebuild). Under
   # theme.wallpaper_scheme = "m3-monochrome" the generated palette stays
-  # grayscale, matching the zellij/nvim mono aesthetic. font stays declarative.
+  # grayscale, matching the zellij/nvim mono aesthetic.
+  #
+  # Behaviour and keybinds are NOT here — they live in ./ghostty/common.conf,
+  # shared verbatim with the Mac, and are pulled in with `config-file`. Ghostty
+  # loads an included file *after* the file that references it, so common.conf
+  # overrides anything it also sets; only settings it deliberately leaves out
+  # (theme, font-size) can be pinned here. Referencing it by /nix/store path
+  # means it must stay git-tracked and edits need a rebuild to land.
   programs.ghostty = {
     enable = true;
     settings = {
+      config-file = "${./ghostty/common.conf}";
       theme = "noctalia";
-      font-family = "JetBrainsMono Nerd Font";
       font-size = 11;
     };
   };
