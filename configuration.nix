@@ -105,16 +105,9 @@ in
   # A host that DOES want hibernation needs persistent-key encrypted swap
   # sized >= RAM (random-key swap can't survive a reboot) and must set
   # boot.resumeDevice in its own module — see the LVM-on-LUKS appendix in
-  # CLAUDE.md, which is the layout to install against for that.
-
-  # Only consulted on a host where suspend-then-hibernate can actually run.
-  # justin-powerhouse disables the sleep targets outright, so this is inert
-  # there; it is kept for a future host that sleeps.
-  systemd.sleep.settings.Sleep.HibernateDelaySec = 10800; # 3h
-
-  # Laptop-era setting: no current host has a lid, so this never fires.
-  # Retained as the sane default for a future laptop host.
-  services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
+  # CLAUDE.md, which is the layout to install against for that. Such a host
+  # would also want systemd.sleep.settings and a logind lid-switch policy;
+  # both are logind/systemd defaults here, since no current host sleeps.
 
   ############################################################
   # SECURE BOOT (lanzaboote) — uncomment after install, see secure-boot.md
@@ -175,28 +168,18 @@ in
   services.resolved.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
-  # Fingerprint auth. No current host has a reader, so fprintd runs with
-  # nothing to talk to and the PAM hooks below fall straight through to a
-  # password — harmless, but not doing anything either. Kept because the PAM
-  # wiring interacts with Noctalia's lock screen (see the note below) and
-  # removing it wants testing on a machine that can actually exercise the
-  # lock path. On a host that does have a reader, enroll with `fprintd-enroll`.
-  services.fprintd.enable = true;
-  security.pam.services = {
-    sudo.fprintAuth = true; # sudo prompt
-    login.fprintAuth = true; # TTY login
-    su.fprintAuth = true; # su to another user
-    polkit-1.fprintAuth = true; # GUI privilege prompts (e.g. password change)
-    greetd.fprintAuth = true; # noctalia-greeter at the login screen
-    # Noctalia's lock screen uses /etc/pam.d/login, so login.fprintAuth above
-    # is what lights up the lock screen's fingerprint path. In v5 the lock
-    # screen's auth is native (C++): it arms pam_fprintd at lock time and
-    # manages the fingerprint-vs-password handoff itself. The v4 QML flags that
-    # used to gate this (`allowPasswordWithFprintd` / `autoStartAuth`, once
-    # asserted by home.activation.noctaliaConfigSeed) no longer exist and are
-    # not needed. Re-verify the touch-to-unlock path after any Noctalia bump —
-    # this system-side fprintd wiring assumes Noctalia arms the reader for us.
-  };
+  # No fingerprint auth: no current host has a reader. fprintd and the
+  # security.pam.services fprintAuth hooks were laptop-era config and are
+  # gone; sudo, TTY login, su, polkit and the greeter all authenticate by
+  # password, which is what they were already doing in practice.
+  #
+  # To restore on a host that does have a reader: set services.fprintd.enable
+  # and the per-service fprintAuth flags in that host's module, and re-add
+  # auth.allow_empty_password to programs.noctalia-greeter (see below) —
+  # pam_fprintd answers the password prompt with an empty reply after a
+  # match, which the greeter otherwise rejects. Noctalia's lock screen reads
+  # /etc/pam.d/login, so login.fprintAuth is the flag that lights up its
+  # fingerprint path; its v5 auth is native and arms pam_fprintd itself.
 
   ############################################################
   # niri + greetd (noctalia-greeter) login
@@ -221,15 +204,16 @@ in
   # Security → Noctalia Greeter → Sync Now — see TODO.md). The greeter's
   # NixOS module sets services.greetd.enable + default_session.command with
   # mkDefault, so no explicit greetd block is needed here.
-  #   - allow_empty_password: fprintd's PAM module answers the password
-  #     prompt with an empty reply after a fingerprint match; without this
-  #     the greeter rejects that reply as invalid credentials.
   #   - keyboard.layout: greeter runs before the session's input config, so
   #     the layout has to be told explicitly.
+  #
+  # auth.allow_empty_password was here only to accommodate pam_fprintd, which
+  # replies to the password prompt with an empty string after a fingerprint
+  # match. With fprintd removed (see above) nothing produces an empty reply,
+  # so allowing one bought nothing — it's dropped rather than left standing.
   programs.noctalia-greeter = {
     enable = true;
     settings = {
-      auth.allow_empty_password = true;
       keyboard.layout = "us";
     };
   };
