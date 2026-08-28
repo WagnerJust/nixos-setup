@@ -1295,11 +1295,11 @@ in
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
-      "text/html" = "chromium-browser.desktop";
-      "x-scheme-handler/http" = "chromium-browser.desktop";
-      "x-scheme-handler/https" = "chromium-browser.desktop";
-      "x-scheme-handler/about" = "chromium-browser.desktop";
-      "x-scheme-handler/unknown" = "chromium-browser.desktop";
+      "text/html" = "vivaldi-stable.desktop";
+      "x-scheme-handler/http" = "vivaldi-stable.desktop";
+      "x-scheme-handler/https" = "vivaldi-stable.desktop";
+      "x-scheme-handler/about" = "vivaldi-stable.desktop";
+      "x-scheme-handler/unknown" = "vivaldi-stable.desktop";
       # Claude Code's URL handler (claude-cli://...) — preserved from the
       # runtime mimeapps.list so `claude` URL launches still work.
       "x-scheme-handler/claude-cli" = "claude-code-url-handler.desktop";
