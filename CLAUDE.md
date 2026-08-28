@@ -50,7 +50,7 @@ Shared, host-agnostic files in the repo root; per-machine state under `hosts/`:
 - **`configuration.nix`** — Shared system-level config: bootloader, PipeWire, networking, niri + greetd/tuigreet, Docker, Ollama (ROCm), the `sroberts` user, and the system-wide GUI apps (`_1password-gui`, `chromium`, `obsidian`, …). Host-agnostic — no hostname, no per-disk UUIDs. The function signature is `{ config, lib, pkgs, inputs, … }`.
 - **`home.nix`** — User-level (home-manager): Noctalia config, niri input + binds, CLI/TUI tooling, zsh + integrations (zoxide, fzf, eza, bat, starship, mise), and `home.activation.*` hooks for the imperative gaps Nix can't declare (LazyVim starter, CyberChef download, post-install TODO.md). Shared across hosts.
 - **`ghostty/common.conf`** — Ghostty settings shared with the owner's Mac (which is *not* Nix-managed): behaviour, zellij-style keybinds, font family. `home.nix` pulls it in via `config-file = "${./ghostty/common.conf}"` and the Mac's own config includes it by working-copy path. **Ghostty loads an included file *after* the file that references it, so `common.conf` overrides the including config** — which is why theme and font-size are deliberately absent from it and pinned per-host instead. Being referenced by store path, it must stay git-tracked, and edits need a rebuild to land on NixOS.
-- **`hosts/<hostname>/`** — Everything machine-specific. `default.nix` sets `networking.hostName` and imports the `nixos-hardware` modules for that machine. `hardware-configuration.nix` (committed) encodes the root LUKS UUID, filesystems, and swapDevices. The only host today is `hosts/justin-powerhouse/`, which also carries `llama-power.nix` (a user service running a llama.cpp hot-swap proxy), the `/home/justin/models` mount, the SSH/authorized-keys block, and the `lib.mkForce` overrides that turn off Ollama and the sleep targets from shared config. See `hosts/README.md` and `scripts/new-host.sh` for adding one.
+- **`hosts/<hostname>/`** — Everything machine-specific. `default.nix` sets `networking.hostName` and imports the `nixos-hardware` modules for that machine. `hardware-configuration.nix` (committed) encodes the root LUKS UUID, filesystems, and swapDevices. The only host today is `hosts/justin-powerhouse/`, which also carries `llama-power.nix` (a user service running a llama.cpp hot-swap proxy), `gpu-power.nix` + `lact-config.yaml` (AMD OverDrive and the LACT profiles — see below), the `/home/justin/models` mount, the SSH/authorized-keys block, and the `lib.mkForce` overrides that turn off Ollama and the sleep targets from shared config. See `hosts/README.md` and `scripts/new-host.sh` for adding one.
 
 ### Disk layout — two supported paths
 
@@ -79,6 +79,34 @@ The lock screen is Noctalia's own (its own PAM context, raised via `WlSessionLoc
 
 Idle is driven by **Noctalia's own idle manager**, configured declaratively via `programs.noctalia.settings.idle.behavior`: a single named behavior, `lock`, at `timeout = 600` (10 min) running the internal action `noctalia:session lock`. **There is no auto-suspend behavior** — this box stays always-on and remotely reachable, and the sleep targets are masked at the host level anyway. **swayidle** (in `home.nix`) is kept only for its `before-sleep` hook, which locks via Noctalia's IPC ahead of a sleep Noctalia didn't initiate; with sleep disabled on this host that hook is effectively dormant, but it costs nothing and is correct for any future host that does sleep.
 
+### GPU + CPU performance profiles
+
+Ported from the machine's previous CachyOS install (2026-08). Three modes, each flipping GPU, CPU and refresh rate together:
+
+| | GPU (LACT) | CPU (ppd) | Monitor |
+| --- | --- | --- | --- |
+| 🟢 Daily | 272 W, 80 °C target, zero-RPM fan | `power-saver` | 60 Hz |
+| 🟣 AI | 402 W *(clamped to 348 W)*, 70 °C, `performance_level: high` | `performance` | 60 Hz |
+| 🔴 Gaming | 350 W, 75 °C | `performance` | 165 Hz |
+
+- **`hosts/justin-powerhouse/gpu-power.nix`** — `hardware.amdgpu.overdrive.enable` with `ppfeaturemask = "0xffffffff"`, plus `services.lact.enable`. **The mask is what unlocks everything**: without it amdgpu never creates `pp_od_clk_voltage` and clamps `power1_cap_max` to the stock 303 W, so LACT can set neither fan curves nor a raised power cap. It is a kernel parameter, so enabling or changing it needs `nixos-rebuild boot` + a **reboot**, not `switch`.
+- **Real power ceiling is 348 W**, not the 402 W the powerhouse repo's docs long claimed — `power1_cap_max` is default + 15 %. The AI profile still asks for 402 and is silently clamped.
+- **`lact-config.yaml` is seeded, not symlinked.** `services.lact.settings` would make `/etc/lact/config.yaml` a read-only store path, but LACT writes `current_profile` back into that same file — declarative config breaks `lact cli profile set` and every GUI edit. A `systemd.tmpfiles` `C` rule copies it in only when absent, so LACT owns the live copy. **Tuning done in the LACT GUI is not saved until it is copied back**: run `pwrh-lact-save`, then commit. (This is not hypothetical — the clock/voltage tuning from the CachyOS era was lost exactly this way; only the power/fan settings had been committed.)
+- **`pwrh-mode`** (in `home.nix`) — fuzzel menu on `Mod+G`, a bar button, and the `Mod+Space` launcher. Also `pwrh-mode daily|ai|gaming|status` headlessly; the monitor step self-skips when `NIRI_SOCKET` is unset. Current mode is *derived* from live state (ppd profile + refresh rate), never cached.
+- **Monitor is an Acer ED273 on `DP-1`**, 1920x1080, 60 Hz ↔ 164.998 Hz. Note the `outputs` block in `home.nix` still names a Dell P3221D and a laptop panel — neither is attached to this machine; more Framework residue, inert but misleading.
+
+### Noctalia bar widgets — the `custom_button` gotcha
+
+`custom_button` is the only user-programmable bar widget (the other 31 types are fixed), and **the published docs are wrong for 5.0.0**. They show a `[widget.NAME.actions]` block with `left` / `right` keys; 5.0.0 rejects it with `WARN widget.<name>.actions: unknown setting` and the button silently does nothing. The real keys are flat, matching `bar.default.dead_zone`:
+
+```
+command  right_command  middle_command  scroll_up_command  scroll_down_command
+```
+
+There is no `left_command`, `back_command` or `forward_command`. Values are plain commands — no `exec ` prefix (that would run a program named `exec`); `noctalia:` is reserved for internal actions. **`noctalia config validate` only WARNS on unknown settings and still exits 0**, so the home-manager module's build-time validation will not fail on a typo here — check it by hand after editing widgets.
+
+Two more: defining `[bar.default]` **replaces** the built-in lane lists rather than merging, so all three lanes must be spelled out (recover the defaults with `noctalia config export full`); and the `sysmon` widget takes no per-instance settings — it is driven entirely by `[system.monitor]`, where **`gpu_poll_seconds` defaults to `0.0`, i.e. GPU monitoring is off** until you set it.
+
 ### Laptop leftovers in shared config
 
 `sjr-fw13` was deleted (`4c3e656`) but shared `configuration.nix` was never cleaned up after it. These settings are still applied to a desktop that has no battery, no lid, and no fingerprint reader. None of them break the build, and most are inert — but **do not read their inline comments as a description of the current machine**:
@@ -86,7 +114,7 @@ Idle is driven by **Noctalia's own idle manager**, configured declaratively via 
 | Setting | Comment claims | Reality on `justin-powerhouse` |
 | --- | --- | --- |
 | `services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate"` | lid close escalates to hibernate | No lid. Dead config — the sleep targets are masked in the host module anyway. |
-| `services.power-profiles-daemon.enable = true` / `services.tlp.enable = false` | "NOT tlp on Ryzen 7040", per Framework's recommendation | Ryzen 5800X desktop. The 7040 rationale doesn't apply; a mains-powered desktop arguably wants neither. |
+| `services.power-profiles-daemon.enable = true` / `services.tlp.enable = false` | "NOT tlp on Ryzen 7040", per Framework's recommendation | **No longer a leftover — keep it.** The 7040 rationale is wrong, but the 5800X runs `amd-pstate-epp`, so ppd is the CPU half of the `pwrh-mode` profile switch (governor + EPP over polkit, no sudo). See *GPU + CPU performance profiles* below. |
 | `services.fprintd.enable = true` + the PAM wiring | Goodix fingerprint reader | No fingerprint reader. `fprintd` runs with nothing to talk to. |
 | `services.ollama` with `pkgs.ollama-rocm` | "Radeon 780M iGPU" | Overridden — the host sets `services.ollama.enable = lib.mkForce false` and runs llama.cpp on the RX 7900 XTX instead. The 780M comment refers to the laptop's iGPU. |
 

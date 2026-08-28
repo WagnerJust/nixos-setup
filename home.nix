@@ -305,6 +305,239 @@ let
       esac
     '';
   };
+
+  # pwrh-mode — the performance-profile switch, ported from the CachyOS
+  # ModeSwitch.sh / ModeMenu.sh pair. One pick flips three things at once:
+  #
+  #   GPU      LACT profile     (power cap + fan curve + performance level)
+  #   CPU      powerprofilesctl (governor + EPP, via amd-pstate-epp)
+  #   Monitor  niri output mode (refresh rate)
+  #
+  #   🟢 Daily   272 W ·  60 Hz · power-saver · zero-RPM fan — silent desktop
+  #   🟣 AI      402 W ·  60 Hz · performance · perf level high — inference
+  #   🔴 Gaming  350 W · 165 Hz · performance
+  #
+  # The GPU numbers come from hosts/justin-powerhouse/lact-config.yaml, which
+  # is the CachyOS profile set carried over unchanged. 402 W needs OverDrive —
+  # see hardware.amdgpu.overdrive in hosts/justin-powerhouse/gpu-power.nix.
+  #
+  # Differences from the CachyOS original, all deliberate:
+  #   * CPU goes through power-profiles-daemon instead of hand-writing
+  #     scaling_governor / energy_performance_preference across every core.
+  #     ppd talks to amd-pstate-epp directly and is authorised by polkit, so
+  #     there is no sudo, no safe_write() retry loop, and no ananicy-cpp pause
+  #     (ananicy does not exist on this host anyway).
+  #   * Current mode is DERIVED from live state (ppd profile + refresh rate)
+  #     rather than cached in /tmp/pwrh_status, so it cannot go stale across a
+  #     reboot or an out-of-band change.
+  #   * The monitor step is skipped automatically when NIRI_SOCKET is unset
+  #     (i.e. over SSH), replacing the old -n / --no-monitor flag.
+  #   * Failures are reported in a notification instead of being swallowed by
+  #     `2>/dev/null`; a partial apply says which part failed.
+  #   * The menu header is a live GPU readout — temp, draw against cap, core
+  #     clock, VRAM, fan, busy% — folding in the old `pwrh-ew` HUD.
+  #
+  # Also usable headlessly: `pwrh-mode daily|ai|gaming` and `pwrh-mode status`.
+  pwrhMode = pkgs.writeShellApplication {
+    name = "pwrh-mode";
+    runtimeInputs = with pkgs; [
+      coreutils
+      fuzzel
+      gawk
+      libnotify
+      power-profiles-daemon
+    ];
+    text = ''
+      # niri and lact are resolved from the inherited PATH rather than pinned
+      # here: niri comes from the running session, and lact is installed
+      # system-wide by services.lact. Both are guarded below and report if
+      # missing rather than failing silently.
+      MONITOR=DP-1
+      MODE_SLOW="1920x1080@60.000"
+      MODE_FAST="1920x1080@164.998"
+
+      # Resolve the amdgpu hwmon by name. The card index is card1 on this box
+      # and hwmon2 today, but neither is guaranteed stable across kernels.
+      HW=""; DEV=""
+      for h in /sys/class/drm/card*/device/hwmon/hwmon*; do
+        [ "$(cat "$h/name" 2>/dev/null || true)" = "amdgpu" ] || continue
+        HW="$h"; DEV="$(dirname "$(dirname "$h")")"; break
+      done
+
+      rd() { cat "$1" 2>/dev/null || echo 0; }
+
+      toast() { notify-send -a pwrh-mode "Performance mode" "$1"; }
+
+      current_hz() {
+        [ -n "''${NIRI_SOCKET:-}" ] || { echo 0; return; }
+        niri msg outputs 2>/dev/null \
+          | awk '/Current mode:/{ sub(/\..*/, "", $5); print $5; exit }' \
+          || echo 0
+      }
+
+      # Derived, never cached. power-saver is unambiguous; above that the
+      # refresh rate is the tie-breaker, exactly as the original did.
+      current_mode() {
+        local ppd hz
+        ppd=$(powerprofilesctl get 2>/dev/null || echo unknown)
+        hz=$(current_hz)
+        if [ "$ppd" = "power-saver" ]; then echo Daily
+        elif [ "''${hz:-0}" -ge 100 ] 2>/dev/null; then echo Gaming
+        elif [ "$ppd" = "performance" ]; then echo AI
+        else echo Unknown
+        fi
+      }
+
+      gpu_line() {
+        [ -n "$HW" ] || { echo "no amdgpu hwmon found"; return; }
+        local temp pwr cap core vu vt fan busy
+        temp=$(( $(rd "$HW/temp1_input") / 1000 ))
+        pwr=$(awk -v u="$(rd "$HW/power1_average")" 'BEGIN{printf "%.0f", u/1000000}')
+        cap=$(awk -v u="$(rd "$HW/power1_cap")" 'BEGIN{printf "%.0f", u/1000000}')
+        core=$(( $(rd "$HW/freq1_input") / 1000000 ))
+        fan=$(rd "$HW/fan1_input")
+        vu=$(( $(rd "$DEV/mem_info_vram_used") / 1048576 ))
+        vt=$(( $(rd "$DEV/mem_info_vram_total") / 1048576 ))
+        busy=$(rd "$DEV/gpu_busy_percent")
+        # A 0 W cap means OverDrive is still locked — the driver clamps
+        # power1_cap until amdgpu.ppfeaturemask is set (needs a reboot after
+        # first enabling it). Worth surfacing, because the AI profile silently
+        # cannot reach 402 W in that state.
+        local draw
+        if [ "$cap" = "0" ]; then
+          draw=$(printf '%sW (cap locked - OverDrive off)' "$pwr")
+        else
+          draw=$(printf '%sW/%sW' "$pwr" "$cap")
+        fi
+        printf '%s°C  %s  %sMHz  %s/%s MiB  %s rpm  %s%%' \
+          "$temp" "$draw" "$core" "$vu" "$vt" "$fan" "$busy"
+      }
+
+      apply() {
+        local want=$1 lprof ppdp mode failed=""
+        case "$want" in
+          daily)  lprof=Daily;  ppdp=power-saver; mode=$MODE_SLOW ;;
+          ai)     lprof=AI;     ppdp=performance; mode=$MODE_SLOW ;;
+          gaming) lprof=Gaming; ppdp=performance; mode=$MODE_FAST ;;
+        esac
+
+        if command -v lact >/dev/null 2>&1; then
+          lact cli profile set "$lprof" >/dev/null 2>&1 || failed="$failed GPU"
+        else
+          failed="$failed GPU(lact-missing)"
+        fi
+
+        powerprofilesctl set "$ppdp" >/dev/null 2>&1 || failed="$failed CPU"
+
+        # Skipped over SSH: no compositor to talk to.
+        if [ -n "''${NIRI_SOCKET:-}" ] && command -v niri >/dev/null 2>&1; then
+          niri msg output "$MONITOR" mode "$mode" >/dev/null 2>&1 \
+            || failed="$failed monitor"
+        fi
+
+        if [ -n "$failed" ]; then
+          toast "$lprof applied with errors — failed:$failed"
+        else
+          toast "$lprof"
+        fi
+      }
+
+      status() {
+        printf 'mode: %s\ncpu:  %s\ngpu:  %s\nhz:   %s\n' \
+          "$(current_mode)" \
+          "$(powerprofilesctl get 2>/dev/null || echo '?')" \
+          "$(gpu_line)" \
+          "$(current_hz)"
+      }
+
+      case "''${1:-}" in
+        daily|ai|gaming) apply "$1"; exit 0 ;;
+        status)          status;    exit 0 ;;
+        "")              ;;
+        *) echo "usage: pwrh-mode [daily|ai|gaming|status]" >&2; exit 2 ;;
+      esac
+
+      # No compositor → no menu. Print instead of failing.
+      [ -n "''${NIRI_SOCKET:-}" ] || { status; exit 0; }
+
+      cur=$(current_mode)
+      header="$cur  ·  $(gpu_line)"
+
+      mark() { [ "$1" = "$cur" ] && printf '  ●' || true; }
+
+      choice=$(
+        {
+          printf '%s\n' "$header"
+          printf '🟢 Daily   272 W ·  60 Hz · silent%s\n'      "$(mark Daily)"
+          printf '🟣 AI      402 W ·  60 Hz · perf high%s\n'   "$(mark AI)"
+          printf '🔴 Gaming  350 W · 165 Hz%s\n'               "$(mark Gaming)"
+          printf 'LACT GUI\n'
+        } | fuzzel --dmenu --prompt "mode> "
+      ) || exit 0
+
+      case "$choice" in
+        "$header")  exec "$0" ;;
+        🟢*)        apply daily ;;
+        🟣*)        apply ai ;;
+        🔴*)        apply gaming ;;
+        "LACT GUI") command -v lact >/dev/null 2>&1 && lact gui & ;;
+        *) exit 0 ;;
+      esac
+    '';
+  };
+
+  # pwrh-lact-save — copy the live LACT config back into this repo.
+  #
+  # This exists because of a real loss: the GPU profiles tuned on the previous
+  # CachyOS install were only ever copied into git by hand, so the power caps
+  # and fan curves survived the migration but the clock/voltage tuning did not
+  # — it was never in a committed file. LACT owns /etc/lact/config.yaml at
+  # runtime (see hosts/justin-powerhouse/gpu-power.nix for why it is seeded
+  # rather than symlinked), which means anything dialled in through the GUI
+  # lives only on that disk until it is pulled back here.
+  #
+  # So: tune in the LACT GUI, run `pwrh-lact-save`, commit.
+  #
+  # `current_profile` is normalised to Daily on the way in. It changes every
+  # time pwrh-mode switches, and left alone it would make every save a diff
+  # even when no tuning changed — the same reasoning as powerhouse commit
+  # 0332504 ("lact: set current_profile to Daily").
+  pwrhLactSave = pkgs.writeShellApplication {
+    name = "pwrh-lact-save";
+    runtimeInputs = with pkgs; [
+      coreutils
+      diffutils
+      gnused
+    ];
+    text = ''
+      REPO=''${PWRH_NIXOS_REPO:-/home/justin/nixos-setup}
+      LIVE=/etc/lact/config.yaml
+      DEST="$REPO/hosts/justin-powerhouse/lact-config.yaml"
+
+      [ -r "$LIVE" ] || { echo "pwrh-lact-save: $LIVE not readable — is lactd running?" >&2; exit 1; }
+      [ -d "$REPO" ] || { echo "pwrh-lact-save: repo not found at $REPO" >&2; exit 1; }
+
+      staged=$(mktemp)
+      trap 'rm -f "$staged"' EXIT
+      sed 's/^current_profile: .*/current_profile: Daily/' "$LIVE" > "$staged"
+
+      if [ -f "$DEST" ] && diff -q "$staged" "$DEST" >/dev/null; then
+        echo "pwrh-lact-save: no change — $DEST already matches the live config."
+        exit 0
+      fi
+
+      echo "--- $DEST (committed)"
+      echo "+++ $LIVE (live, current_profile normalised to Daily)"
+      diff -u "$DEST" "$staged" || true
+      echo
+
+      cp "$staged" "$DEST"
+      echo "pwrh-lact-save: updated $DEST"
+      echo "Review and commit:"
+      echo "  git -C $REPO diff -- hosts/justin-powerhouse/lact-config.yaml"
+      echo "  git -C $REPO commit -m 'lact: save tuned GPU profiles' hosts/justin-powerhouse/lact-config.yaml"
+    '';
+  };
 in
 {
   home.username = "justin";
@@ -450,6 +683,8 @@ in
           "volume"
           "brightness"
           "battery"
+          "sysmon"
+          "pwrh-mode"
           "llama-power"
           "control-center"
           "session"
@@ -487,6 +722,35 @@ in
         # login shell, and a command that is not found fails silently —
         # exactly the way the wrong `actions` block did.
         right_command = "/run/current-system/sw/bin/systemctl --user restart llama-power";
+      };
+
+      # Performance-mode button, same custom_button contract as llama-power
+      # above. Left opens the menu; right jumps straight to Daily, which is
+      # the one you want in a hurry (fans down, power capped).
+      widget.pwrh-mode = {
+        type = "custom_button";
+        glyph = "wave-sine";
+        tooltip = "Performance mode — GPU / CPU / refresh rate";
+        command = "${pwrhMode}/bin/pwrh-mode";
+        right_command = "${pwrhMode}/bin/pwrh-mode daily";
+      };
+
+      # System monitor readout in the bar — this is the waybar GPU widget's
+      # replacement. It takes no per-widget settings of its own (verified
+      # against `noctalia config validate`: every show_*/metrics-style key is
+      # rejected); everything is driven from [system.monitor] below.
+      widget.sysmon.type = "sysmon";
+
+      # GPU polling ships DISABLED — gpu_poll_seconds defaults to 0.0, which
+      # is why nothing GPU-shaped appears in the bar out of the box. 2s
+      # matches the built-in cpu/memory cadence. Thresholds are left at their
+      # defaults except the temp ones: the 7900 XTX idles in the 30s and the
+      # LACT profiles target 70-80 °C, so the stock 60/85 would sit in
+      # "critical" during ordinary inference.
+      system.monitor = {
+        gpu_poll_seconds = 2.0;
+        gpu_temp_activity_threshold = 75.0;
+        gpu_temp_critical_threshold = 95.0;
       };
 
       # Idle handling, native to Noctalia's idle manager. Named behaviors
@@ -570,6 +834,9 @@ in
       # llama-power control menu (fuzzel). Also on the bar and in the
       # Mod+Space launcher — see the `llamaPowerMenu` derivation.
       "Mod+M".action.spawn = "llama-power-menu";
+      # Performance mode menu (Daily / AI / Gaming) — GPU, CPU and refresh
+      # rate together. Also on the bar and in the Mod+Space launcher.
+      "Mod+G".action.spawn = "pwrh-mode";
 
       # Window
       "Mod+Q".action.close-window = [ ];
@@ -905,6 +1172,13 @@ in
     # `let` above. Bound to Mod+M, listed in the Mod+Space launcher, and
     # wired to a bar button in programs.noctalia.
     llamaPowerMenu
+    # Performance-profile switch (GPU power cap + CPU governor + refresh
+    # rate). Bound to Mod+G; see the `pwrhMode` derivation in the `let` above
+    # and hosts/justin-powerhouse/gpu-power.nix for the LACT half.
+    pwrhMode
+    # Pull the live LACT config back into the repo after GUI tuning — the
+    # profiles are only saved once they are committed. See the derivation.
+    pwrhLactSave
     # pipx itself is still NOT installed via Nix: build-time deps in current
     # nixos-unstable (black, black[extras], nox) cycle through transient
     # failures. Install pipx + jsongrep (not in nixpkgs) manually post-boot
@@ -1604,6 +1878,22 @@ in
       "System"
     ];
     settings.Keywords = "llama;llm;model;ai;proxy;gpu;inference;";
+  };
+
+  # Same launcher treatment as llama-power: findable from Mod+Space by name
+  # or by "gpu" / "gaming" / "overclock".
+  xdg.desktopEntries.pwrh-mode = {
+    name = "Performance Mode";
+    genericName = "GPU / CPU profile switch";
+    comment = "Switch between Daily, AI and Gaming profiles";
+    exec = "${pwrhMode}/bin/pwrh-mode";
+    icon = "preferences-system-power";
+    terminal = false;
+    categories = [
+      "Settings"
+      "System"
+    ];
+    settings.Keywords = "gpu;cpu;power;profile;gaming;overclock;lact;refresh;mode;";
   };
 
   xdg.mimeApps = {

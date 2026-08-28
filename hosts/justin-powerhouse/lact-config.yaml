@@ -1,0 +1,44 @@
+version: 6
+daemon:
+  log_level: info
+  admin_group: wheel
+  disable_clocks_cleanup: false
+apply_settings_timer: 5
+profiles:
+  Daily:
+    gpus:
+      1002:744C-1DA2:471E-0000:2d:00.0:
+        fan_control_enabled: false
+        pmfw_options:
+          acoustic_limit: 2400
+          acoustic_target: 1200
+          minimum_pwm: 15
+          target_temperature: 80
+          zero_rpm: true
+          zero_rpm_threshold: 55
+        power_cap: 272.0
+  Gaming:
+    gpus:
+      1002:744C-1DA2:471E-0000:2d:00.0:
+        fan_control_enabled: false
+        pmfw_options:
+          acoustic_limit: 3000
+          acoustic_target: 1800
+          minimum_pwm: 20
+          target_temperature: 75
+          zero_rpm: false
+        power_cap: 350.0
+  AI:
+    gpus:
+      1002:744C-1DA2:471E-0000:2d:00.0:
+        fan_control_enabled: false
+        pmfw_options:
+          acoustic_limit: 3000
+          acoustic_target: 1500
+          minimum_pwm: 20
+          target_temperature: 70
+          zero_rpm: false
+        power_cap: 402.0
+        performance_level: high
+current_profile: Daily
+auto_switch_profiles: false
