@@ -288,11 +288,11 @@ in
       # force-disabled in configuration.nix so the two don't race.
       shell.polkit_agent = true;
 
-      # Idle escalation, native to Noctalia's idle manager. Named behaviors
-      # under [idle.behavior.*]: a 10-min lock. No auto-suspend — this
-      # box stays always-on and remotely reachable. `noctalia:session lock` is the internal action; the bare
-      # systemctl command is run as a user command. See services.swayidle
-      # below for the one job (lock-on-lid-close) this can't cover.
+      # Idle handling, native to Noctalia's idle manager. Named behaviors
+      # under [idle.behavior.*]: one behavior, a 10-min lock, running the
+      # internal action `noctalia:session lock`. No auto-suspend behavior —
+      # this box stays always-on and remotely reachable, and the sleep
+      # targets are disabled at the host level anyway.
       idle.behavior = {
         lock = {
           timeout = 600;
@@ -571,7 +571,7 @@ in
         "previous"
       ];
 
-      # Brightness — Framework keyboard top row.
+      # Brightness — XF86 media keys, where the keyboard has them.
       "XF86MonBrightnessUp".action.spawn = [
         "brightnessctl"
         "s"
@@ -610,29 +610,25 @@ in
     ''
   );
 
-  # The idle escalation is driven entirely by Noctalia's own idle manager,
-  # configured declaratively via programs.noctalia.settings.idle.behavior above:
-  #
-  #   - LOCK (10 min): [idle.behavior.lock] timeout=600, `noctalia:session lock`.
-  #     Locks via WlSessionLock — the ONLY path that works, since Noctalia
-  #     ignores logind's Lock signal, so `loginctl lock-session` is a no-op.
-  #   - SUSPEND-THEN-HIBERNATE (15 min): [idle.behavior.hibernate] timeout=900
-  #     running `systemctl suspend-then-hibernate` as a user command. Suspends
-  #     to RAM, then hibernates after HibernateDelaySec (3h, configuration.nix)
-  #     — hibernate at 3h 15m total.
+  # Idle is driven entirely by Noctalia's own idle manager, configured
+  # declaratively via programs.noctalia.settings.idle.behavior above: one
+  # behavior, LOCK at 10 min ([idle.behavior.lock] timeout=600, action
+  # `noctalia:session lock`). That locks via WlSessionLock — the ONLY path
+  # that works, since Noctalia ignores logind's Lock signal, so
+  # `loginctl lock-session` is a no-op. There is no auto-suspend behavior.
   #
   # swayidle is kept for the ONE thing a Noctalia idle command can't do: lock
-  # before a sleep Noctalia didn't initiate — namely a lid close (logind's
-  # HandleLidSwitch). Its before-sleep hook holds a logind sleep inhibitor and
-  # raises Noctalia's lock via IPC ahead of ANY suspend/hibernate, so the
-  # screen is never left unlocked on resume. No timeouts here — they live in
-  # Noctalia.
+  # before a sleep Noctalia didn't initiate. Its before-sleep hook holds a
+  # logind sleep inhibitor and raises Noctalia's lock via IPC ahead of ANY
+  # suspend/hibernate, so the screen is never left unlocked on resume. On a
+  # host with the sleep targets disabled nothing ever triggers it, but it
+  # costs nothing and is correct for a future host that does sleep. No
+  # timeouts here — they live in Noctalia.
   #
   # The before-sleep command resolves noctalia by absolute store path:
   # swayidle.service runs under user@.service's app.slice with a minimal PATH
   # that does NOT inherit the niri/login-shell PATH where `programs.noctalia`
-  # puts the binary. Bare `noctalia` would fail with `command not
-  # found`, which is exactly what lid close did before this fix.
+  # puts the binary. Bare `noctalia` would fail with `command not found`.
   services.swayidle = {
     enable = true;
     events = {
@@ -1314,8 +1310,10 @@ in
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
   # Providers: local Ollama daemon; auto-discovery on empty models list picks
-  # up everything in `ollama list`, so gemma4:latest and gpt-oss:20b (both
-  # seeded via services.ollama.loadModels) become available immediately.
+  # up everything in `ollama list`. NOTE: services.ollama is force-disabled on
+  # justin-powerhouse (llama.cpp serves the GPU there instead), so on that host
+  # nothing is listening on :11434 and this provider resolves to nothing until
+  # it's repointed at the llama-power proxy.
   #
   # Top-level `models` binds crush's two agent roles:
   #   - large (coder agent): gpt-oss:20b — reasoning-first.
