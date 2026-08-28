@@ -319,21 +319,11 @@ in
     autoPrune.enable = true;
   };
 
-  services.ollama = {
-    enable = true;
-    # ROCm build for AMD GPUs; switch to pkgs.ollama (cpu) or
-    # pkgs.ollama-vulkan if rocm crashes. NOTE: justin-powerhouse sets
-    # services.ollama.enable = lib.mkForce false and runs llama.cpp on the
-    # RX 7900 XTX instead, so none of this block is live on that host.
-    package = pkgs.ollama-rocm;
-    # Pulled on first start by ollama-model-loader.service.
-    loadModels = [
-      "llama3.2"
-      "gemma4:latest"
-      "gpt-oss:20b"
-      "lfm2.5-thinking"
-    ];
-  };
+  # No Ollama. The only host serves LLMs with llama.cpp behind the
+  # llama-power proxy (hosts/justin-powerhouse/llama-power.nix), which owns
+  # the GPU; the shared Ollama service existed solely to be force-disabled
+  # there. A future host that wants it should enable services.ollama in its
+  # own module rather than have every machine inherit a GPU-holding daemon.
 
   ############################################################
   # User

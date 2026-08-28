@@ -1375,11 +1375,19 @@ in
 
   # charmbracelet/crush — global config at ~/.config/crush/crush.json.
   #
-  # Providers: local Ollama daemon; auto-discovery on empty models list picks
-  # up everything in `ollama list`. NOTE: services.ollama is force-disabled on
-  # justin-powerhouse (llama.cpp serves the GPU there instead), so on that host
-  # nothing is listening on :11434 and this provider resolves to nothing until
-  # it's repointed at the llama-power proxy.
+  # Providers: STALE AND NON-FUNCTIONAL. This points at an Ollama daemon on
+  # :11434 that no longer exists anywhere in the repo — services.ollama was
+  # removed from configuration.nix, and justin-powerhouse had force-disabled
+  # it long before that, so this provider has resolved to nothing for a while.
+  #
+  # The working local endpoint on this host is the llama-power proxy:
+  # OpenAI-compatible at http://localhost:8080/v1/, model IDs from
+  # `curl -s localhost:8080/v1/models` (coder, glm, devstral, qwen35,
+  # xlam-*, …). Repointing needs two decisions that aren't mechanical:
+  # which crush provider type to use for it, and which models to bind to the
+  # large/small roles — note the `giant` group is exclusive:true, so binding
+  # the two roles to different giant models makes every agent handoff
+  # hot-swap weights.
   #
   # Top-level `models` binds crush's two agent roles:
   #   - large (coder agent): gpt-oss:20b — reasoning-first.
@@ -1817,7 +1825,7 @@ in
       - [ ] Pick Typora theme: Themes → Noctalia Mono
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
-      - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Ollama** → Base URL `http://localhost:11434`, then pick a model from `ollama list` (e.g. `gpt-oss:20b`). Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
+      - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Generic OpenAI** → Base URL `http://localhost:8080/v1` (the llama-power proxy; Ollama is not installed on this host), then pick a model ID from `curl -s localhost:8080/v1/models` (e.g. `coder`). Any API key value works — the proxy doesn't check it. Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`
