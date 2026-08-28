@@ -1,5 +1,6 @@
-# System-level configuration for the Framework 13 AMD.
-# User-level packages and dotfiles live in home.nix.
+# Shared, host-agnostic system-level configuration.
+# Per-machine settings live in hosts/<hostname>/; user-level packages and
+# dotfiles live in home.nix.
 {
   config,
   lib,
@@ -75,12 +76,13 @@ in
   # Boot — systemd-boot now; lanzaboote later (see SECURE BOOT)
   ############################################################
   boot.loader.systemd-boot.enable = true;
-  # Cap /boot entries. The ESP is 1G; each generation writes a kernel + initrd
-  # + entry. 10 entries ≈ 30 days of weekly rebuilds and keeps /boot well under
-  # the fail line where nixos-rebuild switch dies mid-activation.
+  # Cap /boot entries. Each generation writes a kernel + initrd + entry, so an
+  # uncapped list eventually fills the ESP and nixos-rebuild switch dies
+  # mid-activation. 10 is the shared default; a host with a small ESP should
+  # lower it in its own module (justin-powerhouse forces 5 for a ~1 GB ESP).
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
-  boot.kernelPackages = pkgs.linuxPackages_latest; # 6.12+ floor for Ryzen 7040
+  boot.kernelPackages = pkgs.linuxPackages_latest; # newest AMD CPU/GPU support
 
   # FAT32 doesn't support Unix perms, so the ESP defaults to world-readable.
   # bootctl writes a kernel random-seed file in /boot/loader and (correctly)
@@ -94,45 +96,24 @@ in
   ];
 
   ############################################################
-  # Disk encryption + hibernation (suspend-to-disk)
+  # Disk encryption + sleep
   #
-  # Default (Calamares install): ESP + LUKS-encrypted ext4 root. If you
-  # selected the "Swap with Hibernate" option in Calamares, a swap
-  # partition sized for the hibernation image is also created and
-  # nixos-generate-config writes it into hardware-configuration.nix's
-  # `swapDevices`. The kernel resumes from the first listed swap device
-  # by default — no boot.resumeDevice needed. Verify after first boot
-  # with `systemctl hibernate`.
+  # Disk layout is per-host: hardware-configuration.nix carries the root LUKS
+  # UUID, filesystems and swapDevices. No host currently hibernates, so
+  # nothing here sets boot.resumeDevice.
   #
-  # If Calamares' swap detection or hibernation doesn't pick up
-  # automatically, uncomment one of these lines pointing at YOUR machine's
-  # swap device (run `swapon --show` to find it):
-  #
-  #   boot.resumeDevice = "/dev/disk/by-uuid/<your-swap-uuid>";
-  #
-  # If you used INSTALL.md's manual LVM-on-LUKS appendix instead, the
-  # stable LVM path is:
-  #
-  #   boot.resumeDevice = "/dev/vg/swap";
+  # A host that DOES want hibernation needs persistent-key encrypted swap
+  # sized >= RAM (random-key swap can't survive a reboot) and must set
+  # boot.resumeDevice in its own module — see the LVM-on-LUKS appendix in
+  # CLAUDE.md, which is the layout to install against for that.
 
-  # The per-host hibernation swap unlock and boot.resumeDevice are
-  # machine-specific (LUKS UUIDs differ per disk), so they live in the host's
-  # own module: hosts/<hostname>/default.nix. See hosts/README.md for how a
-  # new machine sets them up.
-
-  # Idle escalation timing (Noctalia in home.nix triggers the actions):
-  # lock @ 5 min, then `systemctl suspend-then-hibernate` @ 15 min. That
-  # suspends to RAM and, HibernateDelaySec later, wakes and hibernates to
-  # disk — so hibernate lands at 3h 15m total idle. The long delay favors
-  # quick lid-open resume for the common short-break case; hibernate still
-  # catches the laptop before the battery drains overnight.
+  # Only consulted on a host where suspend-then-hibernate can actually run.
+  # justin-powerhouse disables the sleep targets outright, so this is inert
+  # there; it is kept for a future host that sleeps.
   systemd.sleep.settings.Sleep.HibernateDelaySec = 10800; # 3h
 
-  # Closing the lid suspends to RAM, then hibernates HibernateDelaySec later —
-  # the same suspend-then-hibernate escalation the idle timeout uses. Applies
-  # on battery and AC (HandleLidSwitchExternalPower defaults to this value);
-  # HandleLidSwitchDocked defaults to "ignore", so an external display keeps
-  # the session alive with the lid shut.
+  # Laptop-era setting: no current host has a lid, so this never fires.
+  # Retained as the sane default for a future laptop host.
   services.logind.settings.Login.HandleLidSwitch = "suspend-then-hibernate";
 
   ############################################################
@@ -146,16 +127,19 @@ in
   # };
 
   ############################################################
-  # Framework 13 AMD power & firmware
+  # Power & firmware
   ############################################################
   services.fwupd.enable = true;
-  services.power-profiles-daemon.enable = true; # NOT tlp on Ryzen 7040
+  # power-profiles-daemon rather than tlp. Originally a laptop choice; on a
+  # mains-powered desktop neither does much, but ppd is what Noctalia's power
+  # profile selector talks to, so it stays. The two conflict — never enable both.
+  services.power-profiles-daemon.enable = true;
   services.tlp.enable = false;
   services.fstrim.enable = true;
-  # Noctalia's battery widget (and any UPower consumer) needs the daemon
-  # registered on the system bus; without it the shell logs
-  # `org.freedesktop.DBus.Error.ServiceUnknown` and silently drops battery
-  # state. power-profiles-daemon doesn't pull it in on its own.
+  # UPower must be registered on the system bus for any consumer to read power
+  # state; without it Noctalia logs `org.freedesktop.DBus.Error.ServiceUnknown`.
+  # power-profiles-daemon doesn't pull it in on its own. On a desktop there is
+  # no battery to report, so this is mostly inert.
   services.upower.enable = true;
 
   ############################################################
@@ -178,7 +162,7 @@ in
   i18n.defaultLocale = "en_US.UTF-8";
 
   ############################################################
-  # Networking, Bluetooth, fingerprint
+  # Networking, Bluetooth, fingerprint (see note on fprintd below)
   ############################################################
   # networking.hostName is set per-host in hosts/<hostname>/default.nix.
   networking.networkmanager.enable = true;
@@ -191,9 +175,12 @@ in
   services.resolved.enable = true;
   hardware.bluetooth.enable = true;
   hardware.bluetooth.powerOnBoot = true;
-  # Goodix fingerprint reader. fprintd runs the daemon; the PAM hooks
-  # below let it stand in for a password. Enroll once with `fprintd-enroll`
-  # before the integrations are useful.
+  # Fingerprint auth. No current host has a reader, so fprintd runs with
+  # nothing to talk to and the PAM hooks below fall straight through to a
+  # password — harmless, but not doing anything either. Kept because the PAM
+  # wiring interacts with Noctalia's lock screen (see the note below) and
+  # removing it wants testing on a machine that can actually exercise the
+  # lock path. On a host that does have a reader, enroll with `fprintd-enroll`.
   services.fprintd.enable = true;
   security.pam.services = {
     sudo.fprintAuth = true; # sudo prompt
@@ -350,7 +337,11 @@ in
 
   services.ollama = {
     enable = true;
-    package = pkgs.ollama-rocm; # Radeon 780M iGPU; switch to pkgs.ollama (cpu) or pkgs.ollama-vulkan if rocm crashes
+    # ROCm build for AMD GPUs; switch to pkgs.ollama (cpu) or
+    # pkgs.ollama-vulkan if rocm crashes. NOTE: justin-powerhouse sets
+    # services.ollama.enable = lib.mkForce false and runs llama.cpp on the
+    # RX 7900 XTX instead, so none of this block is live on that host.
+    package = pkgs.ollama-rocm;
     # Pulled on first start by ollama-model-loader.service.
     loadModels = [
       "llama3.2"
