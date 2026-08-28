@@ -23,6 +23,41 @@ let
     vendorHash = "sha256-x4tEGE/ewE4SjUm9m+NTbKZVLNJsvbNg03Wdw7s4qhI=";
   };
 
+  # bootdotdev/bootdev — the Boot.dev course CLI. Not in nixpkgs, so packaged
+  # here like qq above rather than left to a `go install`.
+  #
+  # The version string is NOT injected via ldflags: main.go does
+  # `//go:embed version.txt`, so building from the tag is enough for
+  # `bootdev --version` to report v1.32.1 correctly.
+  #
+  # `bootdev upgrade` (and the built-in update check) shell out to
+  # `go list -m github.com/bootdotdev/bootdev@latest`. That works because go
+  # is on PATH via mise (see programs.mise below), NOT because anything here
+  # provides it — wrapping the binary with a Nix go toolchain would drag
+  # ~250 MB into the closure just for a version check. But note `upgrade`
+  # can't actually replace a Nix store path: to update, bump `version` +
+  # both hashes here and rebuild.
+  bootdev = pkgs.buildGoModule rec {
+    pname = "bootdev";
+    version = "1.32.1";
+    src = pkgs.fetchFromGitHub {
+      owner = "bootdotdev";
+      repo = "bootdev";
+      rev = "v${version}";
+      hash = "sha256-DScpeUQdkzJy+RVkA8ZmGzp5Z9YzkvZViCoov64WAJk=";
+    };
+    vendorHash = "sha256-ZDioEU5uPCkd+kC83cLlpgzyOsnpj2S7N+lQgsQb8uY=";
+    # This one test shells out to /bin/sleep, which doesn't exist in the Nix
+    # build sandbox. It's testing their update-check timeout, not anything we
+    # depend on — skip just it rather than disabling the whole check phase.
+    checkFlags = [ "-skip=^TestGetLatestVersionHasOverallTimeout$" ];
+    meta = {
+      description = "The official CLI for Boot.dev";
+      homepage = "https://github.com/bootdotdev/bootdev";
+      mainProgram = "bootdev";
+    };
+  };
+
   # basecamp/fizzy-cli — packaged from the prebuilt linux-amd64 release
   # binary because `go install` can't reach v3.x.x for this repo: their
   # go.mod still declares `module github.com/basecamp/fizzy-cli` with no
@@ -672,6 +707,19 @@ in
     # zsh completions come along for free under programs.zsh.enableCompletion
     # below. ~/.kube/config is credential state and stays imperative.
     kubectl
+    # Local single-node cluster. Uses the docker driver by default, which is
+    # why this needs virtualisation.docker (configuration.nix) plus the user
+    # in the `docker` group — both already true. The cluster itself lives in
+    # ~/.minikube and is imperative state, not something Nix manages.
+    #
+    # lowPrio because minikube ships bin/kubectl as a SYMLINK TO ITSELF (the
+    # `minikube kubectl --` passthrough, which downloads a cluster-matched
+    # kubectl into ~/.minikube/cache at runtime). That collides with the real
+    # kubectl above and fails the home-manager buildEnv. Deprioritising
+    # minikube lets the standalone kubectl win the collision, so `kubectl`
+    # stays the genuine v1.36.3 binary with its shell completions. Reach the
+    # shim explicitly with `minikube kubectl -- ...` if you ever want it.
+    (lib.lowPrio minikube)
 
     # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
     # via pipx. JFryy/qq is built from source in the `let` above;
@@ -679,6 +727,7 @@ in
     q-text-as-data
     qq
     fizzy-cli
+    bootdev
     # 1Password Quick Access replacement — see the `opquick` derivation in
     # the `let` above for why the built-in hotkey can't work under niri.
     # Bound to Mod+P in programs.niri.
