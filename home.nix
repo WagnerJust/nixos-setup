@@ -672,6 +672,11 @@ in
     gcc
     gnumake
 
+    # Kubernetes client. The derivation runs installShellCompletion, so the
+    # zsh completions come along for free under programs.zsh.enableCompletion
+    # below. ~/.kube/config is credential state and stays imperative.
+    kubectl
+
     # q-text-as-data is packaged in nixpkgs, so we pull it in here instead of
     # via pipx. JFryy/qq is built from source in the `let` above;
     # basecamp/fizzy-cli is the prebuilt v3.0.3 binary, also from `let`.
