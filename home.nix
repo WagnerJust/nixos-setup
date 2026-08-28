@@ -1244,6 +1244,13 @@ in
     # (panes, sessions that survive detach). Tag-pinned in flake.nix to
     # match the herdr server version; bump by editing the tag there.
     inputs.herdr.packages.${pkgs.stdenv.hostPlatform.system}.default
+
+    # WagnerJust/yt-transcript — YouTube transcripts as a single static binary.
+    # The wiki's scripts/capture.sh shells out to this when a shared link is a
+    # video, so it has to be on the *non-interactive* PATH that ssh gets. That
+    # is the reason it lives here rather than being dropped into ~/.local/bin by
+    # hand, which is where it was and which ssh never sees.
+    inputs.yt-transcript.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 
   ############################################################

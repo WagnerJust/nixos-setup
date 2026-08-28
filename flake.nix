@@ -47,6 +47,17 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # WagnerJust/yt-transcript — YouTube transcripts (video, playlist, channel)
+    # as one static Go binary. The repo is private, so this uses the ssh form
+    # rather than the `github:` shorthand: the shorthand goes through the GitHub
+    # API and would need an access token in nix.conf on every machine, while ssh
+    # reuses the key that is already there. Bump with
+    # `nix flake update yt-transcript`.
+    yt-transcript = {
+      url = "git+ssh://git@github.com/WagnerJust/yt-transcript.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # ── SECURE BOOT ────────────────────────────────────────────────
     # Uncomment to enable lanzaboote. Do this ONLY after the system is
     # installed and booting (see secure-boot.md). Enabling it before
