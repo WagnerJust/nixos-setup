@@ -252,7 +252,8 @@
         "nixos-hardware": "nixos-hardware",
         "nixpkgs": "nixpkgs_2",
         "noctalia": "noctalia",
-        "noctalia-greeter": "noctalia-greeter"
+        "noctalia-greeter": "noctalia-greeter",
+        "yt-transcript": "yt-transcript"
       }
     },
     "systems": {
@@ -301,6 +302,26 @@
         "owner": "Supreeeme",
         "repo": "xwayland-satellite",
         "type": "github"
+      }
+    },
+    "yt-transcript": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787934619,
+        "narHash": "sha256-MoZIL91Co85ZEcespb1n7X6KkizN2g5LPhne8ZxhxGU=",
+        "ref": "refs/heads/main",
+        "rev": "5b856781d62494b94d0fda66800e8ee2bb810c1b",
+        "revCount": 4,
+        "type": "git",
+        "url": "ssh://git@github.com/WagnerJust/yt-transcript.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/WagnerJust/yt-transcript.git"
       }
     }
   },
