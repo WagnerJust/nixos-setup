@@ -159,5 +159,21 @@
             echo "  cmake --build build -j"
           '';
         };
+
+      # llama-rocm plus the Vulkan SDK, for a single llama.cpp build carrying both
+      # backends (-DGGML_HIP=ON -DGGML_VULKAN=ON) so llama-bench can compare them
+      # with -dev ROCm0,Vulkan0. Enter with:  nix develop /etc/nixos#llama-rocm-vulkan
+      devShells.x86_64-linux.llama-rocm-vulkan =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+        in
+        self.devShells.x86_64-linux.llama-rocm.overrideAttrs (old: {
+          nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ (with pkgs; [
+            shaderc # glslc, compiles the Vulkan shaders
+            vulkan-headers
+            vulkan-loader
+            spirv-headers
+          ]);
+        });
     };
 }
