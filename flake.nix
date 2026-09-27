@@ -1,5 +1,5 @@
 {
-  description = "justin-powerhouse — NixOS + niri + Noctalia (AMD desktop, encrypted, ROCm)";
+  description = "powerhouse — NixOS + niri + Noctalia (AMD desktop, encrypted, ROCm)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

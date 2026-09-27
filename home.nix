@@ -203,7 +203,7 @@ let
   };
 
   # llama-power — a fuzzel menu for the llama.cpp hot-swap proxy, which runs as
-  # a systemd *user* unit on this host (hosts/justin-powerhouse/llama-power.nix).
+  # a systemd *user* unit on this host (hosts/powerhouse/llama-power.nix).
   # Start/stop/restart, plus a read-only view of the roster and of what is
   # actually resident on the GPU right now.
   #
@@ -218,7 +218,7 @@ let
   #   Mod+Space -> "llama"     the xdg.desktopEntries entry below
   #   the bar button           the `llama-power` widget in programs.noctalia
   #
-  # All of it is local: the proxy listens on 127.0.0.1:8080 on this machine and
+  # All of it is local: the proxy listens on 127.0.0.1:80 on this machine and
   # the unit is a --user unit, so there is no ssh and no sudo anywhere here.
   llamaPowerMenu = pkgs.writeShellApplication {
     name = "llama-power-menu";
@@ -233,7 +233,7 @@ let
     ];
     text = ''
       UNIT=llama-power
-      PROXY=http://127.0.0.1:8080
+      PROXY=http://127.0.0.1
 
       # The unit sends both streams to files (StandardOutput=append:…), so
       # journalctl holds next to nothing — these two are the real logs.
@@ -317,9 +317,9 @@ let
   #   🟣 AI      402 W ·  60 Hz · performance · perf level high — inference
   #   🔴 Gaming  350 W · 165 Hz · performance
   #
-  # The GPU numbers come from hosts/justin-powerhouse/lact-config.yaml, which
+  # The GPU numbers come from hosts/powerhouse/lact-config.yaml, which
   # is the CachyOS profile set carried over unchanged. 402 W needs OverDrive —
-  # see hardware.amdgpu.overdrive in hosts/justin-powerhouse/gpu-power.nix.
+  # see hardware.amdgpu.overdrive in hosts/powerhouse/gpu-power.nix.
   #
   # Differences from the CachyOS original, all deliberate:
   #   * CPU goes through power-profiles-daemon instead of hand-writing
@@ -492,7 +492,7 @@ let
   # CachyOS install were only ever copied into git by hand, so the power caps
   # and fan curves survived the migration but the clock/voltage tuning did not
   # — it was never in a committed file. LACT owns /etc/lact/config.yaml at
-  # runtime (see hosts/justin-powerhouse/gpu-power.nix for why it is seeded
+  # runtime (see hosts/powerhouse/gpu-power.nix for why it is seeded
   # rather than symlinked), which means anything dialled in through the GUI
   # lives only on that disk until it is pulled back here.
   #
@@ -512,7 +512,7 @@ let
     text = ''
       REPO=''${PWRH_NIXOS_REPO:-/home/justin/nixos-setup}
       LIVE=/etc/lact/config.yaml
-      DEST="$REPO/hosts/justin-powerhouse/lact-config.yaml"
+      DEST="$REPO/hosts/powerhouse/lact-config.yaml"
 
       [ -r "$LIVE" ] || { echo "pwrh-lact-save: $LIVE not readable — is lactd running?" >&2; exit 1; }
       [ -d "$REPO" ] || { echo "pwrh-lact-save: repo not found at $REPO" >&2; exit 1; }
@@ -534,8 +534,8 @@ let
       cp "$staged" "$DEST"
       echo "pwrh-lact-save: updated $DEST"
       echo "Review and commit:"
-      echo "  git -C $REPO diff -- hosts/justin-powerhouse/lact-config.yaml"
-      echo "  git -C $REPO commit -m 'lact: save tuned GPU profiles' hosts/justin-powerhouse/lact-config.yaml"
+      echo "  git -C $REPO diff -- hosts/powerhouse/lact-config.yaml"
+      echo "  git -C $REPO commit -m 'lact: save tuned GPU profiles' hosts/powerhouse/lact-config.yaml"
     '';
   };
 in
@@ -1174,7 +1174,7 @@ in
     llamaPowerMenu
     # Performance-profile switch (GPU power cap + CPU governor + refresh
     # rate). Bound to Mod+G; see the `pwrhMode` derivation in the `let` above
-    # and hosts/justin-powerhouse/gpu-power.nix for the LACT half.
+    # and hosts/powerhouse/gpu-power.nix for the LACT half.
     pwrhMode
     # Pull the live LACT config back into the repo after GUI tuning — the
     # profiles are only saved once they are committed. See the derivation.
@@ -1921,12 +1921,12 @@ in
   #
   # Providers: STALE AND NON-FUNCTIONAL. This points at an Ollama daemon on
   # :11434 that no longer exists anywhere in the repo — services.ollama was
-  # removed from configuration.nix, and justin-powerhouse had force-disabled
+  # removed from configuration.nix, and powerhouse had force-disabled
   # it long before that, so this provider has resolved to nothing for a while.
   #
   # The working local endpoint on this host is the llama-power proxy:
-  # OpenAI-compatible at http://localhost:8080/v1/, model IDs from
-  # `curl -s localhost:8080/v1/models` (coder, glm, devstral, qwen35,
+  # OpenAI-compatible at http://localhost/v1/, model IDs from
+  # `curl -s localhost/v1/models` (coder, glm, devstral, qwen35,
   # xlam-*, …). Repointing needs two decisions that aren't mechanical:
   # which crush provider type to use for it, and which models to bind to the
   # large/small roles — note the `giant` group is exclusive:true, so binding
@@ -2369,7 +2369,7 @@ in
       - [ ] Pick Typora theme: Themes → Noctalia Mono
       - [ ] Chromium extensions: sign in to 1Password / Obsidian Web Clipper / Instapaper (the extensions install themselves via configuration.nix)
       - [ ] Sign in to Slack, Discord, Signal, Zoom
-      - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Generic OpenAI** → Base URL `http://localhost:8080/v1` (the llama-power proxy; Ollama is not installed on this host), then pick a model ID from `curl -s localhost:8080/v1/models` (e.g. `coder`). Any API key value works — the proxy doesn't check it. Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
+      - [ ] AnythingLLM Desktop: first launch → Settings → LLM Preference → **Generic OpenAI** → Base URL `http://localhost/v1` (the llama-power proxy; Ollama is not installed on this host), then pick a model ID from `curl -s localhost/v1/models` (e.g. `coder`). Any API key value works — the proxy doesn't check it. Data lives under `~/.config/AnythingLLM/` (or `~/.local/share/AnythingLLM/`); nothing is stored in the Nix store.
       - [ ] Download Playdate Simulator: https://play.date/dev/
       - [ ] Check mise toolchains landed: `mise ls` — if python/node/go show `(missing)`, look at `journalctl -t mise-install --since -10m` for the failure, then re-run `mise install`. The rebuild hook is non-fatal by design so a transient network hiccup can't block activation.
       - [ ] Install pipx + jsongrep: `pip install --user pipx && pipx ensurepath && pipx install jsongrep`

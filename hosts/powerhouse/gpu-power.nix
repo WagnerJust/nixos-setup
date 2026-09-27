@@ -1,4 +1,4 @@
-# GPU power management for justin-powerhouse — AMD Radeon RX 7900 XTX (gfx1100).
+# GPU power management for powerhouse — AMD Radeon RX 7900 XTX (gfx1100).
 #
 # Ports the tuned profile stack from the machine's previous CachyOS install.
 # Three pieces, switched together by the `pwrh-mode` menu in home.nix:
@@ -44,7 +44,7 @@
   #
   # To re-apply edits made here: `sudo rm /etc/lact/config.yaml` then rebuild.
   # To capture edits made in the LACT GUI: copy /etc/lact/config.yaml back over
-  # hosts/justin-powerhouse/lact-config.yaml and commit.
+  # hosts/powerhouse/lact-config.yaml and commit.
   systemd.tmpfiles.rules = [
     "C /etc/lact/config.yaml 0644 root root - ${./lact-config.yaml}"
   ];

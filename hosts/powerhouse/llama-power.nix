@@ -1,6 +1,6 @@
-# llama-power — llama.cpp hot-swap proxy for justin-powerhouse.
+# llama-power — llama.cpp hot-swap proxy for powerhouse.
 #
-# A single stable OpenAI-compatible endpoint on :8080 that routes to and
+# A single stable OpenAI-compatible endpoint on :80 that routes to and
 # hot-swaps multiple llama-server backends. Architecture, config schema and
 # runbook: ~/Side/powerhouse/docs/llama-power.md.
 #
@@ -24,7 +24,7 @@
 #     binary's RPATH depends on. After any `nix flake update`, rebuild llama.cpp
 #     so its RPATH and these libs stay on the same nixpkgs revision.
 #
-#   • The proxy binds 0.0.0.0:8080; the firewall opens 8080 on the tailnet
+#   • The proxy binds 0.0.0.0:80; the firewall opens 80 on the tailnet
 #     interface only (not the LAN).
 #
 # The turboquant fork (turbo-llama-server, for turbo2/turbo3 KV variants) is not
@@ -65,8 +65,13 @@ in
   # `loginctl enable-linger` step from install.sh).
   users.users.${user}.linger = true;
 
-  # Single proxy port, tailnet-only (clients reach it as justin-powerhouse:8080).
-  networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 8080 ];
+  # Single proxy port, tailnet-only (clients reach it as http://powerhouse).
+  networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 80 ];
+
+  # The proxy is a *user* unit, so it can't be granted CAP_NET_BIND_SERVICE
+  # (the user manager has no capabilities to hand out). Lowering the
+  # unprivileged-port floor to 80 is what lets it bind :80. Single-user box.
+  boot.kernel.sysctl."net.ipv4.ip_unprivileged_port_start" = 80;
 
   systemd.user.services.llama-power = {
     description = "llama-power proxy (llama.cpp hot-swap router)";
@@ -77,7 +82,7 @@ in
       LLAMA_SERVER_BIN = "${llamaBin}/llama-server";
       LLAMA_POWER_CONFIG = "${powerDir}/llama_power.yml";
       LLAMA_POWER_LOG = "${home}/llama-power.log";
-      LLAMA_PROXY_PORT = "8080";
+      LLAMA_PROXY_PORT = "80";
 
       # llama-server globals inherited by every spawned backend (see the env
       # table in docs/llama-power.md).

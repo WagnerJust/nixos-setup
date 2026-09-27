@@ -79,7 +79,7 @@ in
   # Cap /boot entries. Each generation writes a kernel + initrd + entry, so an
   # uncapped list eventually fills the ESP and nixos-rebuild switch dies
   # mid-activation. 10 is the shared default; a host with a small ESP should
-  # lower it in its own module (justin-powerhouse forces 5 for a ~1 GB ESP).
+  # lower it in its own module (powerhouse forces 5 for a ~1 GB ESP).
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
   boot.kernelPackages = pkgs.linuxPackages_latest; # newest AMD CPU/GPU support
@@ -320,7 +320,7 @@ in
   };
 
   # No Ollama. The only host serves LLMs with llama.cpp behind the
-  # llama-power proxy (hosts/justin-powerhouse/llama-power.nix), which owns
+  # llama-power proxy (hosts/powerhouse/llama-power.nix), which owns
   # the GPU; the shared Ollama service existed solely to be force-disabled
   # there. A future host that wants it should enable services.ollama in its
   # own module rather than have every machine inherit a GPU-holding daemon.
