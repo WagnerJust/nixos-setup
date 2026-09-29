@@ -49,6 +49,14 @@
   # GPU target so it builds for this arch only. render group for /dev/kfd.
   users.users.justin.extraGroups = [ "render" ];
 
+  # Hardware monitoring over SSH: `sensors` (CPU/board/NVMe temps via
+  # lm_sensors) and nvtop built for AMD only — the full nvtop pulls in the
+  # NVIDIA/Intel backends this box has no use for.
+  environment.systemPackages = with pkgs; [
+    lm_sensors
+    nvtopPackages.amd
+  ];
+
 
   # Always-on box: never auto-suspend/hibernate — it must stay reachable over
   # SSH and keep serving LLMs while idle. The display still turns off and the

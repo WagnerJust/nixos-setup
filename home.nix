@@ -1126,6 +1126,7 @@ in
     railway
     lazydocker
     btop
+    tmux
     fastfetch
     jq
     fd
