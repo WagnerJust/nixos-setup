@@ -34,14 +34,14 @@
 let
   user = "justin";
   home = "/home/${user}";
-  # The proxy program + its editable config are deployed copies under ~/models
-  # (mirrors the original ~/Models layout). Source of truth is the powerhouse
-  # repo (os/<target>/programs/llama_power.{py,yml}); deploy = copy into ~/models.
-  # Kept as runtime files rather than nix-store paths so editing the roster and
-  # running llama-power-restart never needs a nixos-rebuild.
-  powerDir = "${home}/models";
+  # The proxy program + its config run straight from the powerhouse clone on
+  # this machine: deploy = `git pull` + restart, and an on-box roster edit shows
+  # up in `git status` instead of drifting in a copy. The clone's working tree
+  # is therefore live — a branch checked out there runs at the next restart.
+  # Kept out of the nix store so editing the roster never needs a nixos-rebuild.
+  powerDir = "${home}/Side/powerhouse/os/nixos-niri/programs";
 
-  # Only these four are imported by deploy/programs/llama_power.py.
+  # Only these four are imported by llama_power.py.
   pythonEnv = pkgs.python3.withPackages (ps: with ps; [
     fastapi
     uvicorn
@@ -83,6 +83,9 @@ in
       LLAMA_POWER_CONFIG = "${powerDir}/llama_power.yml";
       LLAMA_POWER_LOG = "${home}/llama-power.log";
       LLAMA_PROXY_PORT = "80";
+      # Voice input in the web UI: the proxy transcribes recordings through
+      # whisper-server (./whisper.nix) before they reach the model.
+      WHISPER_URL = "http://127.0.0.1:8178";
 
       # llama-server globals inherited by every spawned backend (see the env
       # table in docs/llama-power.md).
