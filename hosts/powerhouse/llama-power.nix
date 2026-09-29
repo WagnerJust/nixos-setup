@@ -68,6 +68,31 @@ in
   # Single proxy port, tailnet-only (clients reach it as http://powerhouse).
   networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 80 ];
 
+  # HTTPS front door: https://powerhouse.tail0163a.ts.net → the proxy on :80.
+  # Browsers only allow the web UI's mic in a secure context, so voice input
+  # needs this; plain http://powerhouse keeps working for API clients.
+  #
+  # Not services.tailscale.serve — that nixpkgs module only configures
+  # Tailscale *Services* (svc:<name>), not this node's own serve config.
+  # Serve state lives in tailscaled; re-applying it each boot keeps a
+  # rebuild-from-scratch from silently losing it. Needs MagicDNS + HTTPS
+  # certificates enabled in the tailnet admin console (one-time, not
+  # declarable). Retries until tailscaled is logged in and running.
+  systemd.services.tailscale-serve-llama-power = {
+    description = "tailscale serve: HTTPS → llama-power";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "tailscaled.service" "network-online.target" ];
+    wants = [ "tailscaled.service" "network-online.target" ];
+    startLimitIntervalSec = 0;
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${config.services.tailscale.package}/bin/tailscale serve --bg --yes --https=443 http://127.0.0.1:80";
+      Restart = "on-failure";
+      RestartSec = 10;
+    };
+  };
+
   # The proxy is a *user* unit, so it can't be granted CAP_NET_BIND_SERVICE
   # (the user manager has no capabilities to hand out). Lowering the
   # unprivileged-port floor to 80 is what lets it bind :80. Single-user box.
@@ -86,6 +111,9 @@ in
       # Voice input in the web UI: the proxy transcribes recordings through
       # whisper-server (./whisper.nix) before they reach the model.
       WHISPER_URL = "http://127.0.0.1:8178";
+      # Spoken replies: the proxy injects voice.js into the web UI and serves
+      # /v1/audio/speech from tts-server (./tts.nix).
+      TTS_URL = "http://127.0.0.1:8180";
 
       # llama-server globals inherited by every spawned backend (see the env
       # table in docs/llama-power.md).
