@@ -35,8 +35,8 @@
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "no"; # root: TTY + su only, no SSH
   users.users.justin.openssh.authorizedKeys.keys = [
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC16pUqaDn5oPx0Cg8txN8yCMyieBeFo67Ck7v/zygeH Shortcuts on Justin’s Iphone",
-    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCyGCsP/swVHFVT57NlnOcuucO2KCehQUyOi9KAdYLiFNiSCjDDbayXs4vGL9dLEXndEf/rqNiY64riXZMyy+Eo= local_no_auth@secretive.MacBook-Pro-(10).local",
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC16pUqaDn5oPx0Cg8txN8yCMyieBeFo67Ck7v/zygeH Shortcuts on Justin’s Iphone"
+    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCyGCsP/swVHFVT57NlnOcuucO2KCehQUyOi9KAdYLiFNiSCjDDbayXs4vGL9dLEXndEf/rqNiY64riXZMyy+Eo= local_no_auth@secretive.MacBook-Pro-(10).local"
     "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBHLzsqmboxbKEfuJnlFwKZwl1rbXNk1BCEnjZ4o1sKLAtNCwsCXz+Pi9wWtULiiSxBrTz24kpsr9Hkfdt/amGPM= La Terminal Enclave Key on iPhone"
   ];
   # LLM weights on the second NVMe (nvme1n1, serial 26026B804673): a bare
