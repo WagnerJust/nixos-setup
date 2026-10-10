@@ -34,6 +34,11 @@
   # Remote access for this desktop. openFirewall (default true) opens 22.
   services.openssh.enable = true;
   services.openssh.settings.PermitRootLogin = "no"; # root: TTY + su only, no SSH
+  # Keys only, and only the ones declared below: no passwords, and sshd ignores
+  # ~/.ssh/authorized_keys so a hand-added key cannot outlive this file.
+  services.openssh.settings.PasswordAuthentication = false;
+  services.openssh.settings.KbdInteractiveAuthentication = false;
+  services.openssh.authorizedKeysInHomedir = false;
   users.users.justin.openssh.authorizedKeys.keys = [
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC16pUqaDn5oPx0Cg8txN8yCMyieBeFo67Ck7v/zygeH Shortcuts on Justin’s Iphone"
     "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCyGCsP/swVHFVT57NlnOcuucO2KCehQUyOi9KAdYLiFNiSCjDDbayXs4vGL9dLEXndEf/rqNiY64riXZMyy+Eo= local_no_auth@secretive.MacBook-Pro-(10).local"
