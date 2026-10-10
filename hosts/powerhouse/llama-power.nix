@@ -25,7 +25,7 @@
 #     so its RPATH and these libs stay on the same nixpkgs revision.
 #
 #   • The proxy binds 0.0.0.0:80; the firewall opens 80 on the tailnet
-#     interface only (not the LAN).
+#     interface and the docker bridge (not the LAN).
 #
 # The turboquant fork (turbo-llama-server, for turbo2/turbo3 KV variants) is not
 # built yet — the xlam-4x32k / 6x21k / 8x16k / 128k roster entries stay
@@ -67,6 +67,13 @@ in
 
   # Single proxy port, tailnet-only (clients reach it as http://powerhouse).
   networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ 80 ];
+
+  # …and to local containers. A container reaching this host's own address
+  # arrives on the docker bridge, not tailscale0, so the rule above drops it.
+  # That stopped `sandbox` (~/Side/sandbox) sandboxes on this box from
+  # reaching the models: its route forwarders egress via docker0. Containers
+  # only; the LAN stays closed.
+  networking.firewall.interfaces."docker0".allowedTCPPorts = [ 80 ];
 
   # HTTPS front door: https://powerhouse.tail0163a.ts.net → the proxy on :80.
   # Browsers only allow the web UI's mic in a secure context, so voice input

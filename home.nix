@@ -1269,6 +1269,8 @@ in
       tree = "eza --tree";
       cat = "bat";
       zed = "zeditor";
+      # PI_OFFLINE stops PI's startup update and catalogue checks, as on the Mac.
+      pi = "PI_OFFLINE=1 pi";
     };
     # Append ~/.local/bin to PATH for imperatively-installed user binaries:
     # pipx drops console scripts here (see pipx note in home.packages above),
@@ -1588,6 +1590,11 @@ in
         node = "lts";
         pnpm = "latest";
         go = "latest";
+        # PI, the coding agent driven by llama-power's models. Pinned to the
+        # MacBook's version so sessions and extensions behave the same on both.
+        # Its config is linked from the powerhouse clone by
+        # home.activation.piConfig below.
+        "npm:@earendil-works/pi-coding-agent" = "1.0.0";
       };
       settings = {
         python.compile = false;
@@ -1755,6 +1762,30 @@ in
           && PATH="${pkgs.nodejs}/bin:$PATH" \
              npm_config_script_shell="${pkgs.bash}/bin/bash" \
              ${pkgs.nodejs}/bin/npx --yes impeccable install </dev/null ) 2>&1 || true
+      fi
+    '';
+  };
+
+  # PI config — the same files the MacBook uses, from the powerhouse clone.
+  # `just pi-install` there links ~/.pi/agent/{settings,models}.json and every
+  # pi-extensions/* directory into ~/.pi/agent, and installs persona-review's
+  # one runtime dependency. It is idempotent and moves anything it displaces
+  # aside rather than overwriting it. Calling the recipe instead of declaring
+  # the links here means a new extension needs a `git pull`, not a rebuild.
+  # PI writes settings.json at runtime, so it cannot be a read-only store link.
+  # mcp.json is deliberately not linked: the Mac's points at macOS binaries.
+  # Bare activation PATH, so just, bash and node come in by store path; logged
+  # to the journal (`journalctl -t pi-config`) and non-fatal, like miseInstall.
+  home.activation.piConfig = {
+    after = [ "writeBoundary" ];
+    before = [ ];
+    data = ''
+      if [ -f "$HOME/Side/powerhouse/justfile" ]; then
+        PATH="${pkgs.bash}/bin:${pkgs.nodejs}/bin:$PATH" \
+          npm_config_script_shell="${pkgs.bash}/bin/bash" \
+          ${pkgs.just}/bin/just --justfile "$HOME/Side/powerhouse/justfile" pi-install </dev/null 2>&1 \
+          | ${pkgs.systemd}/bin/systemd-cat -t pi-config -p info \
+          || true
       fi
     '';
   };
